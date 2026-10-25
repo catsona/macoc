@@ -26,7 +26,8 @@ typedef enum {
     CapswitchRemapConflict = 5,
     CapswitchRemapSetFailed = 6,
     CapswitchRemapVerificationFailed = 7,
-    CapswitchRemapMissingRegistryID = 8
+    CapswitchRemapMissingRegistryID = 8,
+    CapswitchRemapPersistenceFailed = 9
 } CapswitchRemapResult;
 
 CapswitchRemapperRef CapswitchRemapperCreate(void);

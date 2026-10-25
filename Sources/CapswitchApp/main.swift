@@ -1,10 +1,13 @@
 import AppKit
+import CapswitchCore
 import Darwin
 import Foundation
 
-if CommandLine.arguments.contains("--doctor") {
-    // Read-only inspection uses the same native IOKit code as the GUI.
-    // This command never changes mappings or starts an event tap.
+let arguments = LaunchArguments(arguments: Array(CommandLine.arguments.dropFirst()))
+
+switch arguments {
+case .doctor:
+    // Uses the same read-only native IOKit inspector as the running app.
     let remapper = HIDRemappingController()
     do {
         try remapper.inspect()
@@ -21,6 +24,25 @@ if CommandLine.arguments.contains("--doctor") {
         fputs("Capswitch HID check: \(error.localizedDescription)\n", stderr)
         exit(1)
     }
+
+case .install:
+    do {
+        let location = try AppInstallationManager().install()
+        print("Installed Capswitch: \(location.path)")
+        exit(0)
+    } catch {
+        fputs("Capswitch install: \(error.localizedDescription)\n", stderr)
+        exit(1)
+    }
+
+case let .waitForParent(pid):
+    guard ApplicationRelauncher.waitForPreviousProcess(pid) else {
+        fputs("Capswitch restart aborted: previous instance did not exit.\n", stderr)
+        exit(1)
+    }
+
+case .application:
+    break
 }
 
 let application = NSApplication.shared

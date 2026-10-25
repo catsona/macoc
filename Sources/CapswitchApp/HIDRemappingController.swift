@@ -24,6 +24,8 @@ enum HIDRemapError: LocalizedError {
                 return "A keyboard did not confirm the Caps → F19 mapping."
             case 8:
                 return "Could not identify a keyboard service safely."
+            case 9:
+                return "Cannot persist keyboard remapping recovery data. Capswitch will not accept an untracked remap."
             default:
                 return "Native IOKit keyboard remapping failed (code \(code))."
             }

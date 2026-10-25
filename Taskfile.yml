@@ -49,6 +49,18 @@ tasks:
         cp Resources/Info.plist "{{.APP_DIR}}/Contents/Info.plist"
         codesign --force --sign - "{{.APP_DIR}}"
 
+  install:
+    desc: Install Capswitch into ~/Applications and open it (no sudo)
+    deps: [bundle]
+    cmds:
+      - |
+        if [ "$(uname -s)" != "Darwin" ]; then
+          echo "SKIP: installation requires macOS."
+          exit 0
+        fi
+        "{{.APP_DIR}}/Contents/MacOS/{{.APP_NAME}}" --install
+        open "$HOME/Applications/{{.APP_NAME}}.app"
+
   lint:
     desc: Run host-independent source and bundle checks
     cmds:
@@ -63,10 +75,18 @@ tasks:
       - grep -q "keyboardEventKeycode" Sources/CapswitchApp/MacOSInputController.swift
       - grep -q "CapsInputRouter.f19VirtualKeyCode" Sources/CapswitchApp/MacOSInputController.swift
       - test -f Sources/CapswitchApp/HIDRemappingController.swift
+      - test -f Sources/CapswitchApp/InputSourceManager.swift
+      - test -f Sources/CapswitchApp/ApplicationRelauncher.swift
+      - test -f Sources/CapswitchApp/ApplicationLifecycleController.swift
+      - test -f Sources/CapswitchApp/LoginItemManager.swift
+      - test -f Sources/CapswitchApp/AppInstallationManager.swift
+      - grep -q "SMAppService.mainApp" Sources/CapswitchApp/LoginItemManager.swift
+      - test -f Tests/CapswitchCoreTests/LaunchArgumentsTests.swift
       - test -f Sources/CapswitchHID/CapswitchHID.c
       - test -f Sources/CapswitchHID/CapswitchRemapping.c
       - grep -q "IOHIDServiceClientSetProperty" Sources/CapswitchHID/CapswitchRemapping.c
-      - '! grep -R -E "Process\(|/usr/bin/hidutil" Sources'
+      - '! grep -R -F "/usr/bin/hidutil" Sources'
+      - grep -q "child.executableURL = executableURL" Sources/CapswitchApp/ApplicationRelauncher.swift
       - test -f Tests/CapswitchCoreTests/CapsInputRouterTests.swift
       - grep -q "CGEvent.tapCreate" Sources/CapswitchApp/MacOSInputController.swift
       - grep -q "CGEvent.tapEnable" Sources/CapswitchApp/MacOSInputController.swift
@@ -75,7 +95,7 @@ tasks:
       - grep -q "CGEvent.tapIsEnabled" Sources/CapswitchApp/MacOSInputController.swift
       - test "$(grep -c "CGEventTapCreate" Sources/CapswitchApp/MacOSInputController.swift || true)" -eq 0
       - test "$(grep -c "CGEventTapEnable" Sources/CapswitchApp/MacOSInputController.swift || true)" -eq 0
-      - grep -q "TISSelectInputSource" Sources/CapswitchApp/MacOSInputController.swift
+      - grep -q "TISSelectInputSource" Sources/CapswitchApp/InputSourceManager.swift
       - grep -q "switchToNextInputSource" Sources/Capswitch/CapsGestureMachine.swift
 
   doctor:

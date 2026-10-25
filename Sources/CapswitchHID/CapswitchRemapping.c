@@ -19,12 +19,12 @@ typedef struct {
     CFMutableSetRef ownedServices;
 } CapswitchRemapper;
 
-static void PersistOwnedServices(CapswitchRemapper *manager) {
+static bool PersistOwnedServices(CapswitchRemapper *manager) {
     CFIndex count = CFSetGetCount(manager->ownedServices);
     const void **ids = count > 0 ? calloc((size_t)count, sizeof(void *)) : NULL;
 
     if (count > 0 && ids == NULL) {
-        return;
+        return false;
     }
 
     if (count > 0) {
@@ -36,13 +36,16 @@ static void PersistOwnedServices(CapswitchRemapper *manager) {
     );
     free(ids);
 
-    if (array != NULL) {
-        CFPreferencesSetAppValue(
-            OWNED_SERVICES_KEY, array, kCFPreferencesCurrentApplication
-        );
-        CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication);
-        CFRelease(array);
+    if (array == NULL) {
+        return false;
     }
+
+    CFPreferencesSetAppValue(
+        OWNED_SERVICES_KEY, array, kCFPreferencesCurrentApplication
+    );
+    bool persisted = CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication);
+    CFRelease(array);
+    return persisted;
 }
 
 CapswitchRemapperRef CapswitchRemapperCreate(void) {
@@ -273,7 +276,12 @@ static int32_t InstallService(
     // Persist ownership before writing so a crash immediately after writing
     // does not leave behind a remap the next launch cannot recognize.
     CFSetAddValue(manager->ownedServices, id);
-    PersistOwnedServices(manager);
+    if (!PersistOwnedServices(manager)) {
+        // No keyboard remapping has been performed yet; fail closed.
+        CFSetRemoveValue(manager->ownedServices, id);
+        CFRelease(desired);
+        return CapswitchRemapPersistenceFailed;
+    }
 
     bool set = IOHIDServiceClientSetProperty(service, MAPPING_KEY, desired);
     CFRelease(desired);
@@ -484,7 +492,10 @@ int32_t CapswitchRemapperRestore(CapswitchRemapperRef reference) {
         if (result != CapswitchRemapOK) break;
 
         CFSetRemoveValue(manager->ownedServices, id);
-        PersistOwnedServices(manager);
+        if (!PersistOwnedServices(manager)) {
+            result = CapswitchRemapPersistenceFailed;
+            break;
+        }
     }
 
     // IDs for disconnected services can be discarded; macOS discards their
@@ -502,7 +513,9 @@ int32_t CapswitchRemapperRestore(CapswitchRemapperRef reference) {
                 }
             }
             free(ids);
-            PersistOwnedServices(manager);
+            if (!PersistOwnedServices(manager)) {
+                result = CapswitchRemapPersistenceFailed;
+            }
         }
     }
 

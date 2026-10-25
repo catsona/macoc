@@ -16,7 +16,10 @@ let package = Package(
             name: "Capswitch",
             dependencies: ["CapswitchCore", "CapswitchHID"],
             path: "Sources/CapswitchApp",
-            linkerSettings: [.linkedFramework("IOKit")]
+            linkerSettings: [
+                .linkedFramework("IOKit"),
+                .linkedFramework("ServiceManagement"),
+            ]
         ),
         .target(
             name: "CapswitchHID",

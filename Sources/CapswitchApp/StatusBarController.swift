@@ -1,8 +1,10 @@
 import AppKit
 import Foundation
+import ServiceManagement
 
 final class StatusBarController: NSObject, NSMenuDelegate {
     private let inputController: MacOSInputController
+    private let lifecycle: ApplicationLifecycleController
     private let statusItem: NSStatusItem
     private let menu = NSMenu()
 
@@ -56,6 +58,26 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         action: #selector(togglePaused),
         keyEquivalent: ""
     )
+    private let installItem = NSMenuItem(
+        title: "Install to ~/Applications…",
+        action: #selector(installApplication),
+        keyEquivalent: ""
+    )
+    private let launchAtLoginItem = NSMenuItem(
+        title: "Launch at Login",
+        action: #selector(toggleLaunchAtLogin),
+        keyEquivalent: ""
+    )
+    private let loginSettingsItem = NSMenuItem(
+        title: "Open Login Items Settings…",
+        action: #selector(openLoginItemsSettings),
+        keyEquivalent: ""
+    )
+    private let restartItem = NSMenuItem(
+        title: "Restart Capswitch",
+        action: #selector(restartApplication),
+        keyEquivalent: ""
+    )
 
     private var refreshTimer: Timer?
     private var nextStartAttempt = Date.distantPast
@@ -63,6 +85,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     init(inputController: MacOSInputController = MacOSInputController()) {
         self.inputController = inputController
+        self.lifecycle = ApplicationLifecycleController(inputController: inputController)
         self.statusItem = NSStatusBar.system.statusItem(
             withLength: NSStatusItem.variableLength
         )
@@ -113,6 +136,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(inputMonitoringItem)
         menu.addItem(systemSwitchItem)
         menu.addItem(NSMenuItem.separator())
+        menu.addItem(installItem)
+        menu.addItem(launchAtLoginItem)
+        menu.addItem(loginSettingsItem)
+        menu.addItem(restartItem)
+        menu.addItem(NSMenuItem.separator())
 
         let quitItem = NSMenuItem(
             title: "Quit Capswitch",
@@ -127,6 +155,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             inputMonitoringItem,
             systemSwitchItem,
             reapplyMappingItem,
+            installItem,
+            launchAtLoginItem,
+            loginSettingsItem,
+            restartItem,
             quitItem,
         ] {
             item.target = self
@@ -217,6 +249,23 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         systemSwitchItem.toolTip =
             "Keyboard → Text Input → Edit → disable 'Use Caps Lock to switch input sources'."
 
+        installItem.title = lifecycle.isInstalled
+            ? "Installed in ~/Applications"
+            : "Install to ~/Applications…"
+        installItem.isEnabled = !lifecycle.isInstalled
+
+        launchAtLoginItem.title = lifecycle.loginItemTitle
+        launchAtLoginItem.isEnabled = lifecycle.isInstalled
+        switch lifecycle.loginItemStatus {
+        case .enabled:
+            launchAtLoginItem.state = .on
+        case .requiresApproval:
+            launchAtLoginItem.state = .mixed
+        default:
+            launchAtLoginItem.state = .off
+        }
+        loginSettingsItem.isHidden = lifecycle.loginItemStatus != .requiresApproval
+
         for item in [
             currentLayoutItem,
             permissionItem,
@@ -259,17 +308,74 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         inputController.reapplyHIDMapping()
     }
 
-    @objc private func quit() {
-        if inputController.stop() {
+    @objc private func installApplication() {
+        let alert = NSAlert()
+        alert.messageText = "Install Capswitch?"
+        alert.informativeText =
+            "Copy this version to ~/Applications/Capswitch.app and launch it from there. " +
+            "No administrator privileges are required."
+        alert.addButton(withTitle: "Install and Launch")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            return
+        }
+
+        let installedURL: URL
+        do {
+            installedURL = try lifecycle.install()
+        } catch {
+            showError("Installation failed", message: error.localizedDescription)
+            return
+        }
+
+        do {
+            try lifecycle.restartInstalledCopy(at: installedURL)
             NSApp.terminate(nil)
-        } else {
-            update()
-            let alert = NSAlert()
-            alert.messageText = "Caps Lock could not be restored"
-            alert.informativeText = inputController.lastError
-                ?? "The native HID service rejected the restoration."
-            alert.addButton(withTitle: "Keep Capswitch Running")
-            alert.runModal()
+        } catch {
+            showError(
+                "Installed, but could not relaunch",
+                message: "Capswitch was installed to ~/Applications. " +
+                    error.localizedDescription
+            )
+        }
+    }
+
+    @objc private func restartApplication() {
+        do {
+            try lifecycle.restartCurrentCopy()
+            NSApp.terminate(nil)
+        } catch {
+            showError("Restart failed", message: error.localizedDescription)
+        }
+    }
+
+    @objc private func toggleLaunchAtLogin() {
+        do {
+            try lifecycle.toggleLaunchAtLogin()
+        } catch {
+            showError("Launch at Login", message: error.localizedDescription)
+        }
+        update()
+    }
+
+    @objc private func openLoginItemsSettings() {
+        SMAppService.openSystemSettingsLoginItems()
+    }
+
+    private func showError(_ title: String, message: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    @objc private func quit() {
+        do {
+            try lifecycle.stopForQuit()
+            NSApp.terminate(nil)
+        } catch {
+            showError("Caps Lock could not be restored", message: error.localizedDescription)
         }
     }
 }
