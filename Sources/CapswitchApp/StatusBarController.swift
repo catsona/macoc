@@ -11,6 +11,16 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         action: nil,
         keyEquivalent: ""
     )
+    private let diagnosticsItem = NSMenuItem(
+        title: "",
+        action: nil,
+        keyEquivalent: ""
+    )
+    private let errorItem = NSMenuItem(
+        title: "",
+        action: nil,
+        keyEquivalent: ""
+    )
     private let permissionItem = NSMenuItem(
         title: "",
         action: #selector(openAccessibilitySettings),
@@ -23,6 +33,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     )
 
     private var refreshTimer: Timer?
+    private var nextStartAttempt = Date.distantPast
+    private var lastDeepRefresh = Date.distantPast
 
     init(inputController: MacOSInputController = MacOSInputController()) {
         self.inputController = inputController
@@ -43,11 +55,19 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             self?.refreshController()
         }
 
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(didWake),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
+
         refreshController()
     }
 
     deinit {
         refreshTimer?.invalidate()
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
         inputController.stop()
         statusItem.menu = nil
         NSStatusBar.system.removeStatusItem(statusItem)
@@ -56,6 +76,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private func configureMenu() {
         menu.delegate = self
         menu.addItem(currentLayoutItem)
+        menu.addItem(diagnosticsItem)
+        menu.addItem(errorItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(pauseItem)
         menu.addItem(permissionItem)
@@ -77,32 +99,61 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     private func refreshController() {
-        if inputController.accessibilityTrusted {
-            if !inputController.isRunning {
-                try? inputController.start()
-            }
-            inputController.refreshInputSources()
+        let now = Date()
+
+        if !inputController.accessibilityTrusted && inputController.isRunning {
+            inputController.stop()
         }
+
+        if inputController.accessibilityTrusted,
+           !inputController.isPaused,
+           !inputController.isRunning,
+           now >= nextStartAttempt {
+            nextStartAttempt = now.addingTimeInterval(5)
+
+            do {
+                try inputController.start()
+            } catch {
+                inputController.lastError = error.localizedDescription
+            }
+        }
+
+        if now.timeIntervalSince(lastDeepRefresh) >= 10 {
+            lastDeepRefresh = now
+            inputController.refreshInputSources()
+            if inputController.isRunning {
+                inputController.repairMappingIfNeeded()
+            }
+        }
+
         update()
     }
 
     private func update() {
-        let shortName = inputController.currentInputSourceShortName
-        statusItem.button?.title = shortName
-        statusItem.button?.toolTip = "Capswitch - \(inputController.currentInputSourceName)"
+        let name = inputController.currentInputSourceName
+        statusItem.button?.title = inputController.isRunning
+            ? inputController.currentInputSourceShortName
+            : "Caps!"
+        statusItem.button?.toolTip = "Capswitch - \(name)"
 
-        currentLayoutItem.title =
-            "Current layout: \(inputController.currentInputSourceName)"
+        currentLayoutItem.title = "Current layout: \(name)"
+        diagnosticsItem.title = inputController.diagnosticsSummary
+        diagnosticsItem.isEnabled = false
+
+        errorItem.isHidden = inputController.lastError == nil
+        errorItem.title = "Error: \(inputController.lastError ?? "")"
+        errorItem.toolTip = inputController.lastError
+        errorItem.isEnabled = false
 
         pauseItem.title = inputController.isPaused
-            ? "Resume switching"
-            : "Pause switching"
+            ? "Resume switching (restore F19)"
+            : "Pause switching (restore Caps)"
         pauseItem.state = inputController.isPaused ? .on : .off
 
         if inputController.accessibilityTrusted {
             permissionItem.title = inputController.isRunning
-                ? "Accessibility: Granted"
-                : "Accessibility: Granted (tap stopped)"
+                ? "Accessibility: Granted · Caps → F19 active"
+                : "Accessibility: Granted · switching inactive"
         } else {
             permissionItem.title = "Grant Accessibility permission…"
         }
@@ -116,8 +167,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         refreshController()
     }
 
+    @objc private func didWake(_ notification: Notification) {
+        inputController.repairMappingIfNeeded()
+        refreshController()
+    }
+
     @objc private func togglePaused() {
         inputController.setPaused(!inputController.isPaused)
+        nextStartAttempt = .distantPast
         update()
     }
 

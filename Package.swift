@@ -14,8 +14,15 @@ let package = Package(
         ),
         .executableTarget(
             name: "Capswitch",
-            dependencies: ["CapswitchCore"],
-            path: "Sources/CapswitchApp"
+            dependencies: ["CapswitchCore", "CapswitchHID"],
+            path: "Sources/CapswitchApp",
+            linkerSettings: [.linkedFramework("IOKit")]
+        ),
+        .target(
+            name: "CapswitchHID",
+            path: "Sources/CapswitchHID",
+            publicHeadersPath: "include",
+            linkerSettings: [.linkedFramework("IOKit")]
         ),
         .testTarget(
             name: "CapswitchCoreTests",

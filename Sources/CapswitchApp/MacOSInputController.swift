@@ -1,5 +1,6 @@
 import AppKit
 import CapswitchCore
+import CapswitchHID
 import ApplicationServices
 import Carbon
 import CoreGraphics
@@ -82,11 +83,24 @@ final class InputSourceManager {
             return Source(inputSource: inputSource, id: id)
         }
 
-        let byID = Dictionary(uniqueKeysWithValues: sources.map { ($0.id, $0) })
+        var byID: [String: Source] = [:]
+        for source in sources {
+            byID[source.id] = source
+        }
+
         let configuredIDs = configuredInputSourceIDs()
-        var ordered = configuredIDs.compactMap { byID[$0] }
-        let configuredSet = Set(configuredIDs)
-        ordered.append(contentsOf: sources.filter { !configuredSet.contains($0.id) })
+        var usedIDs: Set<String> = []
+        var ordered: [Source] = []
+
+        for id in configuredIDs {
+            if let source = byID[id], usedIDs.insert(id).inserted {
+                ordered.append(source)
+            }
+        }
+
+        ordered.append(contentsOf: sources.filter {
+            usedIDs.insert($0.id).inserted
+        })
         return ordered
     }
 
@@ -95,9 +109,8 @@ final class InputSourceManager {
     }
 
     private func configuredInputSourceIDs() -> [String] {
-        guard let entries = UserDefaults.standard.array(
-            forKey: "AppleEnabledInputSources"
-        ) as? [[String: Any]] else {
+        guard let entries = UserDefaults(suiteName: "com.apple.HIToolbox")?
+            .array(forKey: "AppleEnabledInputSources") as? [[String: Any]] else {
             return []
         }
 
@@ -130,23 +143,25 @@ final class InputSourceManager {
 }
 
 final class MacOSInputController {
-    private static let capsLockKeyCode: CGKeyCode = 57
-    private static let syntheticEventMarker: Int64 = 0x4361707353776974
-
     private let inputSources = InputSourceManager()
+    private let remapper = HIDRemappingController()
+
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
-    private var gestureMachine = CapsGestureMachine()
-    private var alphaShiftDown = false
-    private var optionDown = false
-    private var isPostingSyntheticCaps = false
+    private var inputRouter = CapsInputRouter()
+
+    private(set) var observedF19Down = 0
+    private(set) var observedF19Up = 0
+    private(set) var successfulSwitches = 0
+    private(set) var capsLockToggles = 0
 
     var isPaused = false
+    var lastError: String?
+    var onStateChanged: (() -> Void)?
 
     var isRunning: Bool {
-        eventTap != nil
+        eventTap != nil && remapper.isInstalled
     }
-    var onStateChanged: (() -> Void)?
 
     var currentInputSourceName: String {
         inputSources.currentDisplayName
@@ -160,27 +175,32 @@ final class MacOSInputController {
         AXIsProcessTrusted()
     }
 
+    var diagnosticsSummary: String {
+        "F19 ↓\(observedF19Down) ↑\(observedF19Up) · switches \(successfulSwitches)"
+    }
+
     func start() throws {
-        guard eventTap == nil else {
+        guard !isPaused, eventTap == nil else {
             return
         }
 
-        guard AXIsProcessTrusted() else {
+        guard accessibilityTrusted else {
             throw InputControllerError.accessibilityRequired
         }
 
-        // Build the source order before the event tap starts. Enumerating TIS
-        // sources from inside a keyboard callback can block long enough for
-        // macOS to disable the tap while the user is typing quickly.
+        // Enumerate input sources before entering the event tap callback.
         inputSources.refresh()
 
-        let eventMask = CGEventMask(1 << CGEventType.flagsChanged.rawValue)
+        let mask = (CGEventMask(1) << CGEventType.keyDown.rawValue)
+            | (CGEventMask(1) << CGEventType.keyUp.rawValue)
+            | (CGEventMask(1) << CGEventType.flagsChanged.rawValue)
+
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
             options: .defaultTap,
-            eventsOfInterest: eventMask,
+            eventsOfInterest: mask,
             callback: Self.eventTapCallback,
             userInfo: refcon
         ) else {
@@ -201,9 +221,19 @@ final class MacOSInputController {
                 .commonModes
             )
         }
-
         CGEvent.tapEnable(tap: tap, enable: true)
         resetGestureState()
+
+        // Only remap the physical Caps once we know our intercept is active.
+        do {
+            try remapper.ensureInstalled()
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+            stop()
+            throw error
+        }
+
         onStateChanged?()
     }
 
@@ -223,17 +253,50 @@ final class MacOSInputController {
         eventTap = nil
         runLoopSource = nil
         resetGestureState()
+
+        do {
+            try remapper.restoreIfOwned()
+        } catch {
+            lastError = "Cannot restore Caps remap: \(error.localizedDescription)"
+        }
         onStateChanged?()
     }
 
     func setPaused(_ paused: Bool) {
+        guard paused != isPaused else {
+            return
+        }
+
         isPaused = paused
-        resetGestureState()
+        if paused {
+            stop()
+        } else {
+            do {
+                try start()
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
         onStateChanged?()
     }
 
     func refreshInputSources() {
         inputSources.refresh()
+    }
+
+    func repairMappingIfNeeded() {
+        guard !isPaused, eventTap != nil else {
+            return
+        }
+
+        do {
+            try remapper.ensureInstalled()
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+            // Never keep swallowing F19 if our mapping is no longer healthy.
+            stop()
+        }
     }
 
     func openAccessibilitySettings() {
@@ -247,6 +310,7 @@ final class MacOSInputController {
 
     private static let eventTapCallback: CGEventTapCallBack = {
         _, type, event, refcon in
+
         guard let refcon else {
             return Unmanaged.passUnretained(event)
         }
@@ -262,11 +326,6 @@ final class MacOSInputController {
         type: CGEventType,
         event: CGEvent
     ) -> Unmanaged<CGEvent>? {
-        if event.getIntegerValueField(.eventSourceUserData)
-            == Self.syntheticEventMarker {
-            return Unmanaged.passUnretained(event)
-        }
-
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             resetGestureState()
             if let eventTap {
@@ -275,123 +334,88 @@ final class MacOSInputController {
             return Unmanaged.passUnretained(event)
         }
 
-        guard type == .flagsChanged else {
+        let optionDown = event.flags.contains(.maskAlternate)
+
+        if type == .flagsChanged {
+            apply(inputRouter.flagsChanged(optionDown: optionDown))
             return Unmanaged.passUnretained(event)
         }
 
-        let flags = event.flags
-        let newAlphaShiftDown = flags.contains(.maskAlphaShift)
-        let newOptionDown = flags.contains(.maskAlternate)
-        let isCapsEvent = event.getIntegerValueField(.keyboardEventKeycode)
-            == Int64(Self.capsLockKeyCode)
+        guard type == .keyDown || type == .keyUp else {
+            return Unmanaged.passUnretained(event)
+        }
 
-        if isPaused {
-            if isCapsEvent {
-                alphaShiftDown = newAlphaShiftDown
+        let keyCode = UInt16(
+            truncatingIfNeeded: event.getIntegerValueField(.keyboardEventKeycode)
+        )
+
+        // We own F19. Both the down and up must be suppressed so they do not
+        // leak into the foreground app or its own keyboard shortcuts.
+        guard keyCode == CapsInputRouter.f19VirtualKeyCode else {
+            return Unmanaged.passUnretained(event)
+        }
+
+        if type == .keyDown {
+            let repeated = event.getIntegerValueField(.keyboardEventAutorepeat) != 0
+            if !repeated {
+                observedF19Down += 1
             }
-            optionDown = newOptionDown
-            return Unmanaged.passUnretained(event)
+            apply(inputRouter.keyDown(
+                code: keyCode,
+                optionDown: optionDown,
+                isRepeat: repeated
+            ))
+        } else {
+            observedF19Up += 1
+            apply(inputRouter.keyUp(code: keyCode, optionDown: optionDown))
         }
 
-        // Alpha-shift is also used by other keyboard events. Use the physical
-        // key code so a fast sequence of unrelated flagsChanged events cannot
-        // be mistaken for a Caps Lock edge.
-        let capsDown = isCapsEvent && newAlphaShiftDown && !alphaShiftDown
-        let capsUp = isCapsEvent && !newAlphaShiftDown && alphaShiftDown
-        let optionPressed = newOptionDown && !optionDown
-        let optionReleased = !newOptionDown && optionDown
-
-        var action: GestureAction = .none
-
-        if optionPressed {
-            action = combine(action, gestureMachine.handle(.optionDown))
-        }
-
-        if capsDown {
-            action = combine(
-                action,
-                gestureMachine.handle(.capsDown(optionDown: newOptionDown))
-            )
-        }
-
-        if capsUp {
-            action = combine(
-                action,
-                gestureMachine.handle(.capsUp(optionDown: newOptionDown))
-            )
-        }
-
-        if optionReleased {
-            action = combine(action, gestureMachine.handle(.optionUp))
-        }
-
-        if isCapsEvent {
-            alphaShiftDown = newAlphaShiftDown
-        }
-        optionDown = newOptionDown
-        apply(action)
-
-        if capsDown || capsUp {
-            return nil
-        }
-
-        return Unmanaged.passUnretained(event)
+        return nil
     }
 
     private func apply(_ action: GestureAction) {
         switch action {
         case .none:
             break
+
         case .switchToNextInputSource:
-            // The source list is cached before the tap starts, so this path is
-            // deliberately synchronous: the next key must see the new source
-            // even when the user is typing continuously.
+            // Synchronous: the next typed letter must see the new layout.
             if inputSources.selectNextInputSource() {
-                onStateChanged?()
+                successfulSwitches += 1
+                DispatchQueue.main.async { [weak self] in
+                    self?.onStateChanged?()
+                }
+            } else {
+                lastError = "Unable to select the next enabled input source."
             }
+
         case .toggleCapsLock:
-            postSyntheticCapsLock()
+            toggleRealCapsLock()
         }
     }
 
-    private func postSyntheticCapsLock() {
-        guard !isPostingSyntheticCaps,
-              let down = CGEvent(
-                keyboardEventSource: nil,
-                virtualKey: Self.capsLockKeyCode,
-                keyDown: true
-              ),
-              let up = CGEvent(
-                keyboardEventSource: nil,
-                virtualKey: Self.capsLockKeyCode,
-                keyDown: false
-              ) else {
-            return
+    private func toggleRealCapsLock() {
+        var locked = false
+        let readStatus = CapswitchReadCapsLock(&locked)
+
+        if readStatus != 0 {
+            locked = CGEventSource.flagsState(.combinedSessionState)
+                .contains(.maskAlphaShift)
         }
 
-        isPostingSyntheticCaps = true
-        for event in [down, up] {
-            event.flags = []
-            event.setIntegerValueField(
-                .eventSourceUserData,
-                value: Self.syntheticEventMarker
-            )
-            event.post(tap: .cghidEventTap)
+        let writeStatus = CapswitchWriteCapsLock(!locked)
+        if writeStatus == 0 {
+            capsLockToggles += 1
+        } else {
+            lastError = "IOKit Caps Lock toggle failed (code \(writeStatus))."
         }
-        isPostingSyntheticCaps = false
+
+        DispatchQueue.main.async { [weak self] in
+            self?.onStateChanged?()
+        }
     }
 
     private func resetGestureState() {
-        _ = gestureMachine.handle(.reset)
-        alphaShiftDown = false
-        optionDown = false
-        isPostingSyntheticCaps = false
-    }
-
-    private func combine(
-        _ first: GestureAction,
-        _ second: GestureAction
-    ) -> GestureAction {
-        first == .none ? second : first
+        inputRouter.reset()
     }
 }

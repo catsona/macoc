@@ -5,6 +5,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+
+        // Only one process may own the global Caps -> F19 mapping.
+        if let bundleID = Bundle.main.bundleIdentifier,
+           NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+                .contains(where: {
+                    $0.processIdentifier != ProcessInfo.processInfo.processIdentifier
+                }) {
+            NSApp.terminate(nil)
+            return
+        }
+
         statusBarController = StatusBarController()
     }
 

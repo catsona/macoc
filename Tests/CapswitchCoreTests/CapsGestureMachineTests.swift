@@ -14,8 +14,8 @@ final class CapsGestureMachineTests: XCTestCase {
 
         XCTAssertEqual(machine.handle(.optionDown), .none)
         XCTAssertEqual(machine.handle(.capsDown(optionDown: true)), .none)
-        XCTAssertEqual(machine.handle(.capsUp(optionDown: true)), .toggleCapsLock)
-        XCTAssertEqual(machine.handle(.optionUp), .none)
+        XCTAssertEqual(machine.handle(.capsUp(optionDown: true)), .none)
+        XCTAssertEqual(machine.handle(.optionUp), .toggleCapsLock)
     }
 
     func testCapsBeforeOptionTogglesRealCapsLock() {
@@ -23,8 +23,8 @@ final class CapsGestureMachineTests: XCTestCase {
 
         XCTAssertEqual(machine.handle(.capsDown(optionDown: false)), .none)
         XCTAssertEqual(machine.handle(.optionDown), .none)
-        XCTAssertEqual(machine.handle(.capsUp(optionDown: true)), .toggleCapsLock)
-        XCTAssertEqual(machine.handle(.optionUp), .none)
+        XCTAssertEqual(machine.handle(.capsUp(optionDown: true)), .none)
+        XCTAssertEqual(machine.handle(.optionUp), .toggleCapsLock)
     }
 
     func testOptionReleasedAfterCapsCompletesPendingToggle() {
