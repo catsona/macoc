@@ -33,6 +33,25 @@ If the event tap is refused or no F19 events are received, also grant
 **Input Monitoring** from the menu. Restart Capswitch after granting
 permissions if macOS prompts you to do so.
 
+### macOS Sonoma: grant Input Monitoring to hidutil itself
+
+On macOS 14, an Input Monitoring grant for Capswitch.app may not be
+sufficient for its child process /usr/bin/hidutil, which is used to set
+the actual global HID mapping. If task doctor reports (null), Caps->F19
+is not installed (regardless of whether the app process is running).
+
+Open **System Settings -> Privacy & Security -> Input Monitoring**, click
+the + button, then press **Command+Shift+G** in the file picker and enter
+**/usr/bin/hidutil**. Select hidutil and enable its Input Monitoring
+toggle. This is separate from Capswitch.app. Quit and reopen Capswitch,
+then run task doctor again. See also the Sonoma notes for
+mvp/mac-remap-keys.
+
+If the mapping remains null, inspect the **Capswitch menu** and capture
+the Accessibility / Event tap / HID / Error entries. The application may
+be running without having created its event tap at all; Input Monitoring
+for hidutil cannot fix missing Accessibility permission.
+
 If you previously used macOS's built-in Caps-to-input-source switching, open
 System Settings -> Keyboard -> Text Input -> Edit and uncheck
 "Use Caps Lock to switch to and from [last used Latin input source]".

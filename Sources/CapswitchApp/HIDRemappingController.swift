@@ -14,7 +14,7 @@ enum HIDRemapError: LocalizedError {
         case .unreadableMapping:
             return "Cannot safely read the existing HID key mappings; no changes were made."
         case .verificationFailed:
-            return "hidutil did not confirm Caps Lock to F19 remapping."
+            return "hidutil did not apply Caps → F19. On macOS 14, grant Input Monitoring to /usr/bin/hidutil separately from Capswitch.app, then restart Capswitch."
         case let .commandFailed(details):
             return "hidutil failed: \(details)"
         }
