@@ -69,10 +69,36 @@ tasks:
       - test -f Tests/CapswitchCoreTests/HIDMappingCodecTests.swift
       - grep -q "CGEvent.tapCreate" Sources/CapswitchApp/MacOSInputController.swift
       - grep -q "CGEvent.tapEnable" Sources/CapswitchApp/MacOSInputController.swift
+      - grep -q "CGPreflightListenEventAccess" Sources/CapswitchApp/MacOSInputController.swift
+      - grep -q "CGRequestListenEventAccess" Sources/CapswitchApp/MacOSInputController.swift
+      - grep -q "CGEvent.tapIsEnabled" Sources/CapswitchApp/MacOSInputController.swift
       - test "$(grep -c "CGEventTapCreate" Sources/CapswitchApp/MacOSInputController.swift || true)" -eq 0
       - test "$(grep -c "CGEventTapEnable" Sources/CapswitchApp/MacOSInputController.swift || true)" -eq 0
       - grep -q "TISSelectInputSource" Sources/CapswitchApp/MacOSInputController.swift
       - grep -q "switchToNextInputSource" Sources/Capswitch/CapsGestureMachine.swift
+
+  doctor:
+    desc: Inspect macOS Caps preferences, remapping and running Capswitch processes
+    cmds:
+      - |
+        if [ "$(uname -s)" != "Darwin" ]; then
+          echo "SKIP: HID diagnostics require macOS."
+          exit 0
+        fi
+        echo "=== macOS ==="
+        sw_vers
+        echo "=== Native Caps input-source setting (1=enabled, 0=disabled) ==="
+        defaults read -g TISRomanSwitchState 2>/dev/null || true
+        defaults read com.apple.HIToolbox TISRomanSwitchState 2>/dev/null || true
+        echo "=== Global HID remappings ==="
+        hidutil property --get UserKeyMapping
+        echo "=== HID keyboard services (may vary by keyboard) ==="
+        hidutil property --matching '{"PrimaryUsagePage":1,"PrimaryUsage":6}' --get UserKeyMapping || true
+        echo "=== Running Capswitch processes ==="
+        pgrep -fl Capswitch || true
+        echo "=== Privacy permissions ==="
+        echo "Inspect Accessibility and Input Monitoring in the Capswitch status menu."
+        echo "If Input Monitoring is not granted, choose 'Grant Input Monitoring permission'."
 
   clean:
     desc: Remove build outputs

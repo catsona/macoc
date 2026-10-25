@@ -8,14 +8,17 @@ import Foundation
 
 enum InputControllerError: LocalizedError {
     case accessibilityRequired
+    case inputMonitoringRequired
     case eventTapUnavailable
 
     var errorDescription: String? {
         switch self {
         case .accessibilityRequired:
-            return "Accessibility permission is required to intercept Caps Lock."
+            return "Accessibility permission is required. Open the Capswitch menu to grant it."
+        case .inputMonitoringRequired:
+            return "Keyboard tap refused. Grant Input Monitoring from the Capswitch menu."
         case .eventTapUnavailable:
-            return "macOS did not allow the global keyboard event tap to start."
+            return "macOS did not allow the keyboard event tap. Check Accessibility and Input Monitoring permissions."
         }
     }
 }
@@ -160,7 +163,36 @@ final class MacOSInputController {
     var onStateChanged: (() -> Void)?
 
     var isRunning: Bool {
-        eventTap != nil && remapper.isInstalled
+        isTapEnabled && remapper.isInstalled
+    }
+
+    var isTapEnabled: Bool {
+        guard let eventTap else {
+            return false
+        }
+        return CFMachPortIsValid(eventTap) && CGEvent.tapIsEnabled(tap: eventTap)
+    }
+
+    var inputMonitoringTrusted: Bool {
+        CGPreflightListenEventAccess()
+    }
+
+    var hidMappingConfigured: Bool {
+        remapper.isInstalled
+    }
+
+    // This key is an undocumented macOS preference; missing means unknown,
+    // not "off". The UI never changes the user's global keyboard settings.
+    var nativeCapsSwitchState: String {
+        let value = UserDefaults.standard.object(forKey: "TISRomanSwitchState")
+            ?? UserDefaults(suiteName: "com.apple.HIToolbox")?
+                .object(forKey: "TISRomanSwitchState")
+
+        guard let number = value as? NSNumber else {
+            return "Unknown (check Keyboard settings)"
+        }
+
+        return number.intValue == 0 ? "Off" : "On - disable for Capswitch"
     }
 
     var currentInputSourceName: String {
@@ -188,6 +220,9 @@ final class MacOSInputController {
             throw InputControllerError.accessibilityRequired
         }
 
+        // Active .defaultTap filtering is authorized through Accessibility
+        // on many macOS versions. Try that first; Input Monitoring is an
+        // additional diagnostic/grant path if tap creation is refused.
         // Enumerate input sources before entering the event tap callback.
         inputSources.refresh()
 
@@ -204,7 +239,9 @@ final class MacOSInputController {
             callback: Self.eventTapCallback,
             userInfo: refcon
         ) else {
-            throw InputControllerError.eventTapUnavailable
+            throw inputMonitoringTrusted
+                ? InputControllerError.eventTapUnavailable
+                : InputControllerError.inputMonitoringRequired
         }
 
         eventTap = tap
@@ -282,6 +319,60 @@ final class MacOSInputController {
 
     func refreshInputSources() {
         inputSources.refresh()
+    }
+
+    // macOS can silently disable taps after a timeout or permission change.
+    // Detect that before considering the HID mapping healthy.
+    func repairEventTapIfNeeded() {
+        guard let eventTap else {
+            return
+        }
+
+        guard !isTapEnabled else {
+            return
+        }
+
+        if CFMachPortIsValid(eventTap), accessibilityTrusted {
+            CGEvent.tapEnable(tap: eventTap, enable: true)
+        }
+
+        if !isTapEnabled {
+            lastError = "The keyboard event tap is disabled. Recheck macOS permissions."
+            stop()
+        }
+    }
+
+    func reapplyHIDMapping() {
+        guard !isPaused, eventTap != nil, isTapEnabled else {
+            lastError = "The keyboard event tap must be active before reapplying Caps → F19."
+            onStateChanged?()
+            return
+        }
+
+        do {
+            try remapper.reapplyIfOwned()
+            lastError = nil
+        } catch {
+            lastError = error.localizedDescription
+        }
+        onStateChanged?()
+    }
+
+    func requestInputMonitoringPermission() {
+        _ = CGRequestListenEventAccess()
+        if let url = URL(
+            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
+        ) {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    func openKeyboardSettings() {
+        if let url = URL(
+            string: "x-apple.systempreferences:com.apple.preference.keyboard"
+        ) {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     func repairMappingIfNeeded() {

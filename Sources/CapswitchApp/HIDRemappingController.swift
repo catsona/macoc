@@ -37,6 +37,11 @@ final class HIDRemappingController {
             // Adopt a rule left behind after Capswitch crashed. A pre-existing
             // user-managed Caps -> F19 rule has no marker and is never removed.
             ownsMapping = ownsMapping || UserDefaults.standard.bool(forKey: markerKey)
+            if ownsMapping && !isInstalled {
+                // Reapply once after a crash/relaunch. Global UserKeyMapping
+                // may be present while a keyboard service still has no mapping.
+                try writeMappings(current)
+            }
             isInstalled = true
             return
         }
@@ -61,6 +66,26 @@ final class HIDRemappingController {
         }
 
         ownsMapping = true
+        isInstalled = true
+    }
+
+    func reapplyIfOwned() throws {
+        guard ownsMapping || UserDefaults.standard.bool(forKey: markerKey) else {
+            throw HIDRemapError.conflictingMapping
+        }
+
+        let current = try readMappings()
+        guard current.contains(ourMapping) else {
+            try ensureInstalled()
+            return
+        }
+
+        // Re-broadcast the complete mapping table, never an empty replacement.
+        try writeMappings(current)
+        guard try readMappings().contains(ourMapping) else {
+            throw HIDRemapError.verificationFailed
+        }
+
         isInstalled = true
     }
 

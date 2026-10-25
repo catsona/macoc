@@ -21,9 +21,34 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         action: nil,
         keyEquivalent: ""
     )
+    private let tapStatusItem = NSMenuItem(
+        title: "",
+        action: nil,
+        keyEquivalent: ""
+    )
+    private let hidMappingItem = NSMenuItem(
+        title: "",
+        action: nil,
+        keyEquivalent: ""
+    )
+    private let reapplyMappingItem = NSMenuItem(
+        title: "Reapply Caps → F19 mapping",
+        action: #selector(reapplyMapping),
+        keyEquivalent: ""
+    )
     private let permissionItem = NSMenuItem(
         title: "",
         action: #selector(openAccessibilitySettings),
+        keyEquivalent: ""
+    )
+    private let inputMonitoringItem = NSMenuItem(
+        title: "",
+        action: #selector(openInputMonitoringSettings),
+        keyEquivalent: ""
+    )
+    private let systemSwitchItem = NSMenuItem(
+        title: "",
+        action: #selector(openKeyboardSettings),
         keyEquivalent: ""
     )
     private let pauseItem = NSMenuItem(
@@ -77,10 +102,15 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.delegate = self
         menu.addItem(currentLayoutItem)
         menu.addItem(diagnosticsItem)
+        menu.addItem(tapStatusItem)
+        menu.addItem(hidMappingItem)
         menu.addItem(errorItem)
+        menu.addItem(reapplyMappingItem)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(pauseItem)
         menu.addItem(permissionItem)
+        menu.addItem(inputMonitoringItem)
+        menu.addItem(systemSwitchItem)
         menu.addItem(NSMenuItem.separator())
 
         let quitItem = NSMenuItem(
@@ -90,7 +120,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         )
         menu.addItem(quitItem)
 
-        for item in [pauseItem, permissionItem, quitItem] {
+        for item in [
+            pauseItem,
+            permissionItem,
+            inputMonitoringItem,
+            systemSwitchItem,
+            reapplyMappingItem,
+            quitItem,
+        ] {
             item.target = self
         }
 
@@ -101,9 +138,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private func refreshController() {
         let now = Date()
 
-        if !inputController.accessibilityTrusted && inputController.isRunning {
+        if !inputController.accessibilityTrusted,
+           inputController.isTapEnabled {
             inputController.stop()
         }
+
+        inputController.repairEventTapIfNeeded()
 
         if inputController.accessibilityTrusted,
            !inputController.isPaused,
@@ -140,6 +180,15 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         diagnosticsItem.title = inputController.diagnosticsSummary
         diagnosticsItem.isEnabled = false
 
+        tapStatusItem.title = "Event tap: \(inputController.isTapEnabled ? "Enabled" : "Inactive")"
+        tapStatusItem.isEnabled = false
+
+        hidMappingItem.title = inputController.hidMappingConfigured
+            ? "HID Caps → F19: configured (verify physical keyboard)"
+            : "HID Caps → F19: not configured"
+        hidMappingItem.isEnabled = false
+        reapplyMappingItem.isEnabled = inputController.isRunning
+
         errorItem.isHidden = inputController.lastError == nil
         errorItem.title = "Error: \(inputController.lastError ?? "")"
         errorItem.toolTip = inputController.lastError
@@ -150,15 +199,26 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             : "Pause switching (restore Caps)"
         pauseItem.state = inputController.isPaused ? .on : .off
 
-        if inputController.accessibilityTrusted {
-            permissionItem.title = inputController.isRunning
-                ? "Accessibility: Granted · Caps → F19 active"
-                : "Accessibility: Granted · switching inactive"
-        } else {
-            permissionItem.title = "Grant Accessibility permission…"
-        }
+        permissionItem.title = inputController.accessibilityTrusted
+            ? "Accessibility: Granted"
+            : "Grant Accessibility permission…"
 
-        for item in [currentLayoutItem, permissionItem, pauseItem] {
+        inputMonitoringItem.title = inputController.inputMonitoringTrusted
+            ? "Input Monitoring: Granted"
+            : "Input Monitoring: Not granted (may be needed)…"
+
+        systemSwitchItem.title =
+            "System Caps input switch: \(inputController.nativeCapsSwitchState)"
+        systemSwitchItem.toolTip =
+            "Keyboard → Text Input → Edit → disable 'Use Caps Lock to switch input sources'."
+
+        for item in [
+            currentLayoutItem,
+            permissionItem,
+            inputMonitoringItem,
+            systemSwitchItem,
+            pauseItem,
+        ] {
             item.target = self
         }
     }
@@ -180,6 +240,18 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     @objc private func openAccessibilitySettings() {
         inputController.openAccessibilitySettings()
+    }
+
+    @objc private func openInputMonitoringSettings() {
+        inputController.requestInputMonitoringPermission()
+    }
+
+    @objc private func openKeyboardSettings() {
+        inputController.openKeyboardSettings()
+    }
+
+    @objc private func reapplyMapping() {
+        inputController.reapplyHIDMapping()
     }
 
     @objc private func quit() {
