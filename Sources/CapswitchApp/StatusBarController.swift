@@ -77,9 +77,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     private func refreshController() {
-        if inputController.accessibilityTrusted,
-           !inputController.isRunning {
-            try? inputController.start()
+        if inputController.accessibilityTrusted {
+            if !inputController.isRunning {
+                try? inputController.start()
+            }
+            inputController.refreshInputSources()
         }
         update()
     }

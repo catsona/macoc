@@ -25,6 +25,8 @@ final class InputSourceManager {
         let id: String
     }
 
+    private var orderedSources: [Source] = []
+
     var currentDisplayName: String {
         guard let source = currentSource() else {
             return "-"
@@ -43,9 +45,13 @@ final class InputSourceManager {
         return name
     }
 
+    func refresh() {
+        orderedSources = enabledKeyboardSourcesInUserOrder()
+    }
+
     @discardableResult
     func selectNextInputSource() -> Bool {
-        let sources = enabledKeyboardSourcesInUserOrder()
+        let sources = orderedSources
         guard sources.count > 1 else {
             return false
         }
@@ -163,6 +169,11 @@ final class MacOSInputController {
             throw InputControllerError.accessibilityRequired
         }
 
+        // Build the source order before the event tap starts. Enumerating TIS
+        // sources from inside a keyboard callback can block long enough for
+        // macOS to disable the tap while the user is typing quickly.
+        inputSources.refresh()
+
         let eventMask = CGEventMask(1 << CGEventType.flagsChanged.rawValue)
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         guard let tap = CGEvent.tapCreate(
@@ -219,6 +230,10 @@ final class MacOSInputController {
         isPaused = paused
         resetGestureState()
         onStateChanged?()
+    }
+
+    func refreshInputSources() {
+        inputSources.refresh()
     }
 
     func openAccessibilitySettings() {
@@ -328,16 +343,11 @@ final class MacOSInputController {
         case .none:
             break
         case .switchToNextInputSource:
-            // TISSelectInputSource can synchronously trigger more keyboard
-            // notifications. Let the event tap return first so a rapid key +
-            // Caps sequence sees the new source before the next key is typed.
-            DispatchQueue.main.async { [weak self] in
-                guard let self, self.isRunning, !self.isPaused else {
-                    return
-                }
-                if self.inputSources.selectNextInputSource() {
-                    self.onStateChanged?()
-                }
+            // The source list is cached before the tap starts, so this path is
+            // deliberately synchronous: the next key must see the new source
+            // even when the user is typing continuously.
+            if inputSources.selectNextInputSource() {
+                onStateChanged?()
             }
         case .toggleCapsLock:
             postSyntheticCapsLock()

@@ -56,7 +56,8 @@ tasks:
       - grep -q "LSUIElement" Resources/Info.plist
       - grep -q ".flagsChanged" Sources/CapswitchApp/MacOSInputController.swift
       - grep -q "keyboardEventKeycode" Sources/CapswitchApp/MacOSInputController.swift
-      - grep -q "DispatchQueue.main.async" Sources/CapswitchApp/MacOSInputController.swift
+      - grep -q "orderedSources" Sources/CapswitchApp/MacOSInputController.swift
+      - grep -q "inputSources.refresh" Sources/CapswitchApp/MacOSInputController.swift
       - grep -q "CGEvent.tapCreate" Sources/CapswitchApp/MacOSInputController.swift
       - grep -q "CGEvent.tapEnable" Sources/CapswitchApp/MacOSInputController.swift
       - test "$(grep -c "CGEventTapCreate" Sources/CapswitchApp/MacOSInputController.swift || true)" -eq 0
