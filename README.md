@@ -1,133 +1,117 @@
 # Capswitch
 
-Small native macOS menu-bar app. Physical Caps Lock is HID-remapped to F19, which Capswitch intercepts to select the next input source **on release**, including during continuous fast typing. Caps+Option retains the system Caps Lock function.
+Native macOS menu-bar keyboard layout switcher, targeting macOS 14+.
 
-## Requirements
+**Caps**: switch to the next enabled input source **on release**, without
+macOS's stock Caps delay or input-source HUD.
 
-- macOS 14 or newer and Apple Command Line Tools (install with xcode-select --install).
-- Task (Taskfile runner).
-- Grant **Accessibility** under **System Settings -> Privacy & Security** to
-  let the app suppress F19. On some macOS setups you may also need
-  **Input Monitoring**. The menu shows both permissions separately and
-  provides a grant action; active CGEventTap may work with Accessibility alone.
-- **Important for users coming from the stock Caps switch:** Disable
-  **Keyboard -> Text Input -> Edit -> Use Caps Lock to switch to/from ABC**
-  while using Capswitch. That macOS shortcut must not compete with our own
-  input-source selector. Capswitch does not change this setting automatically.
-- Keep the Caps Lock key set to its normal role in **Keyboard -> Keyboard Shortcuts -> Modifier Keys**, not "No Action".
-- No Xcode project, root helper, Karabiner or third-party driver is needed.
+**Caps + Option** in either order: toggle the actual system Caps Lock state.
 
-## Build and test on your Mac
+## How it works
 
-**Quit the currently running Capswitch from its menu first.** Opening an already running app may activate an old process even if a new bundle was created. The Taskfile refuses to replace the app bundle while a Capswitch process is running.
+Capswitch uses **IOKit APIs inside its own process** to remap physical HID
+Caps Lock (usage 0x39) to F19 (usage 0x6E). Its active CoreGraphics event tap
+intercepts F19 down/up and suppresses them, switching layouts on F19 release.
+A small C bridge built into Capswitch contains the IOKit calls required by
+Swift. There is **no subprocess**, no hidutil dependency, no external helper,
+no driver, and no requirement to give permissions to a system executable.
 
-~~~bash
+Apple documents the direct APIs used for remapping in Technical Note TN2450:
+https://developer.apple.com/library/archive/technotes/tn2450/
+
+## Build on your Mac
+
+Install Command Line Tools and the Task runner. Full Xcode is not needed.
+
+**Quit any running Capswitch from the menu before rebuilding.** An already
+running process won't be replaced merely by opening a new .app file.
+
+~~~
 git pull origin main
 task test
 task bundle
 open build/Capswitch.app
 ~~~
 
-After opening Capswitch, grant **Accessibility** from the status-bar menu.
-If the event tap is refused or no F19 events are received, also grant
-**Input Monitoring** from the menu. Restart Capswitch after granting
-permissions if macOS prompts you to do so.
+The bundle is ad-hoc signed with a stable bundle identifier
+(dev.local.Capswitch). Keep its installed path stable so macOS can retain
+its privacy grants.
 
-### macOS Sonoma: grant Input Monitoring to hidutil itself
+## Permissions - Capswitch only
 
-On macOS 14, an Input Monitoring grant for Capswitch.app may not be
-sufficient for its child process /usr/bin/hidutil, which is used to set
-the actual global HID mapping. If task doctor reports (null), Caps->F19
-is not installed (regardless of whether the app process is running).
+At first launch Capswitch requests access via macOS:
+- **Accessibility**: needed for an active event tap that suppresses F19.
+- **Input Monitoring**, if macOS requires it: needed on some macOS setups
+  for observing keyboard events or interacting with the HID subsystem.
 
-Open **System Settings -> Privacy & Security -> Input Monitoring**, click
-the + button, then press **Command+Shift+G** in the file picker and enter
-**/usr/bin/hidutil**. Select hidutil and enable its Input Monitoring
-toggle. This is separate from Capswitch.app. Quit and reopen Capswitch,
-then run task doctor again. See also the Sonoma notes for
-mvp/mac-remap-keys.
+Approve Capswitch.app, *never* /usr/bin/hidutil. macOS requires your own
+confirmation in System Settings; applications cannot grant themselves access.
 
-If the mapping remains null, inspect the **Capswitch menu** and capture
-the Accessibility / Event tap / HID / Error entries. The application may
-be running without having created its event tap at all; Input Monitoring
-for hidutil cannot fix missing Accessibility permission.
+You can check/access those settings through the Capswitch menu. If granting
+a permission requires a restart, Quit and reopen Capswitch.
 
-If you previously used macOS's built-in Caps-to-input-source switching, open
-System Settings -> Keyboard -> Text Input -> Edit and uncheck
-"Use Caps Lock to switch to and from [last used Latin input source]".
-Keep Caps assigned to the normal Caps Lock action in Modifier Keys.
+To avoid competing with the stock shortcut, disable
+**System Settings -> Keyboard -> Text Input -> Edit ->
+Use Caps Lock to switch to/from ABC**. Leave Caps Lock with its normal
+Caps Lock modifier role (not "No Action") in Keyboard Shortcuts -> Modifier Keys.
+Capswitch never secretly changes these system preferences.
 
-Open the Capswitch menu and confirm:
-- Accessibility: Granted
-- Input Monitoring: Granted (or not granted if the active tap works)
-- Event tap: Enabled
-- HID Caps -> F19: configured
+## Status menu
 
-These confirm permissions and the global configuration, **not** yet that the
-physical keyboard is actually sending F19. Use the counters to verify it.
+The menu shows:
+- Current layout
+- Native HID keyboard mapping count (e.g. 2/2 keyboards)
+- Whether the keyboard event tap is enabled
+- Accessibility and Input Monitoring grants
+- F19 down/up and input-source switch counters (no typed text is recorded)
+- Errors and a manual "Retry Caps -> F19 mapping" action
+- Pause (restores Caps) and Quit (restores Caps)
 
-## Behavior
+When testing fast typing, repeatedly tap Caps while typing letters. If F19
+counts increase but the switch counter doesn't, check the enabled TIS sources.
+If the F19 counters remain zero, check the event tap, privacy grants, and HID
+keyboard service count in the menu.
 
-- Plain physical Caps emits F19 keyDown/keyUp. Capswitch swallows both events and on F19 keyUp selects the next enabled keyboard input source.
-- Caps+Option in either order toggles the actual system Caps Lock state through IOKit after Option has been released.
-- Pause from the menu disables the event tap and restores the Caps key to its original purpose.
-- Quit normally restores only Capswitch's Caps->F19 mapping, leaving unrelated mappings alone.
-- On wake or keyboard reconnection, Capswitch checks whether its HID mapping is still present.
+## Native diagnostics
 
-## Diagnostics
-
-Open the status-bar menu while testing quick typing. It displays:
-
-    F19 ↓N ↑N · switches N
-
-No typed text is recorded. If the F19 counts do not change, the HID remap is not producing F19 events
-or the event tap is not receiving them. First check both permissions, the
-event tap status and the native Caps switch preference. Then use the
-"Reapply Caps -> F19 mapping" menu action and repeat the test.
-
-If F19 counts increase but switches do not, investigate TIS input-source
-selection. If the stock Caps input switch still operates while Capswitch
-is active, the HID remap may not be applied to your physical keyboard.
-
-To gather diagnostics without logging any typed text:
-
-~~~bash
+~~~
 task doctor
 ~~~
 
-This prints the native Caps preference, global UserKeyMapping and the keyboard
-service-specific mapping; these can differ even when hidutil exits successfully.
+This executes **Capswitch's own signed executable** in a read-only inspection
+mode and reports the number of HID keyboard services and how many have
+Caps->F19 configured. It does not launch hidutil and does not change keyboard
+configuration. The command requires an existing app bundle.
 
-Caps+Option through IOKit and its LED behavior still require verification on an actual Mac.
+## HID safety
 
-## HID remapping safety
+Capswitch reads **each keyboard service's existing mappings**, refuses
+conflicting mappings involving Caps or F19, and preserves unrelated mappings.
+It remembers which services it modified, storing their registry IDs in the
+app's own preferences for crash recovery.
 
-HID key mapping is global. Capswitch first reads existing mappings, refuses collisions involving Caps or F19, and preserves unrelated remaps. It removes only its own rule on normal Quit/Pause. A small ownership marker allows a later launch to restore a rule that Capswitch left behind after a crash.
+During Pause or normal Quit it removes only the exact Caps->F19 rule from
+those services. Newly connected keyboards are handled when the app refreshes
+its HID state. If Capswitch is forcibly killed, its mapping may remain until
+the next successful Capswitch launch/quit, keyboard service removal, or reboot.
+If the IOKit service rejects a mapping, Capswitch shows an error rather than
+silently claiming success.
 
-If the app is forcibly terminated, Caps may remain mapped to F19 until the app is relaunched and Quit normally, or until reboot. To inspect mappings:
-
-~~~bash
-hidutil property --get UserKeyMapping
-~~~
-
-**Do not clear all UserKeyMapping rules if you use other remappers.** Only if the sole entry is the one Capswitch inserted may you reset mappings manually:
-
-~~~bash
-hidutil property --set '{"UserKeyMapping":[]}'
-~~~
-
-hidutil remapping normally resets after restart or after the last keyboard service disappears.
+If you need to recover, use the menu's Pause/Quit action after restarting
+Capswitch. In an emergency reboot macOS to clear HID remappings. Do not
+blindly clear other programs' mapping tables.
 
 ## Development
 
-~~~bash
+~~~
+task verify
 task lint
 task test
 task build
 task bundle
-task clean
-task verify
 task doctor
+task clean
 ~~~
 
-Linux RSB runs host-independent static checks only. SwiftPM builds, XCTest, IOKit and actual keyboard input behavior must be verified on macOS with the Apple SDK.
+The Linux RSB host can run static checks but has no Apple AppKit/IOKit SDK.
+The final Swift build and real keyboard tests must be run on macOS.

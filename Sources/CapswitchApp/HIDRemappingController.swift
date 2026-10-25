@@ -1,160 +1,108 @@
+import CapswitchHID
 import Foundation
-import CapswitchCore
 
 enum HIDRemapError: LocalizedError {
-    case conflictingMapping
-    case unreadableMapping
-    case verificationFailed
-    case commandFailed(String)
+    case failure(Int32)
 
     var errorDescription: String? {
         switch self {
-        case .conflictingMapping:
-            return "Caps Lock or F19 is already remapped. Disable the conflicting mapping first."
-        case .unreadableMapping:
-            return "Cannot safely read the existing HID key mappings; no changes were made."
-        case .verificationFailed:
-            return "hidutil did not apply Caps → F19. On macOS 14, grant Input Monitoring to /usr/bin/hidutil separately from Capswitch.app, then restart Capswitch."
-        case let .commandFailed(details):
-            return "hidutil failed: \(details)"
+        case let .failure(code):
+            switch code {
+            case 1:
+                return "Not enough memory to manage keyboard mappings."
+            case 2:
+                return "Cannot access IOKit keyboard services. Check Capswitch's macOS privacy permissions."
+            case 3:
+                return "No HID keyboard services found. Connect a keyboard and retry."
+            case 4:
+                return "An existing keyboard mapping has an unsupported format. No unrelated mappings were changed."
+            case 5:
+                return "Caps Lock or F19 already has a conflicting mapping. Capswitch will not overwrite it."
+            case 6:
+                return "macOS rejected the native Caps → F19 mapping for a keyboard."
+            case 7:
+                return "A keyboard did not confirm the Caps → F19 mapping."
+            case 8:
+                return "Could not identify a keyboard service safely."
+            default:
+                return "Native IOKit keyboard remapping failed (code \(code))."
+            }
         }
     }
 }
 
-/// Owns only the Caps -> F19 rule. Other mappings are preserved both when
-/// installing and when restoring on quit or Pause.
+/// Owns the native IOKit remapping manager inside Capswitch itself.
+/// No subprocess, hidutil, privileged helper, driver or third-party library.
 final class HIDRemappingController {
-    private let markerKey = "CapswitchOwnsCapsF19Mapping"
-    private let ourMapping = HIDMappingCodec.capsToF19
+    private let manager: UnsafeMutableRawPointer?
 
     private(set) var isInstalled = false
-    private var ownsMapping = false
+    private(set) var keyboardServiceCount: UInt32 = 0
+    private(set) var mappedServiceCount: UInt32 = 0
+
+    init() {
+        manager = CapswitchRemapperCreate()
+    }
+
+    deinit {
+        if let manager {
+            CapswitchRemapperDestroy(manager)
+        }
+    }
 
     func ensureInstalled() throws {
-        let current = try readMappings()
-
-        if current.contains(ourMapping) {
-            // Adopt a rule left behind after Capswitch crashed. A pre-existing
-            // user-managed Caps -> F19 rule has no marker and is never removed.
-            ownsMapping = ownsMapping || UserDefaults.standard.bool(forKey: markerKey)
-            if ownsMapping && !isInstalled {
-                // Reapply once after a crash/relaunch. Global UserKeyMapping
-                // may be present while a keyboard service still has no mapping.
-                try writeMappings(current)
-            }
-            isInstalled = true
-            return
+        guard let manager else {
+            throw HIDRemapError.failure(1)
         }
 
-        // Do not overwrite Caps remapped to something else, F19 remapped away,
-        // or a different physical key remapped to F19.
-        if current.contains(where: {
-            $0.source == HIDMappingCodec.capsUsage
-                || $0.source == HIDMappingCodec.f19Usage
-                || $0.destination == HIDMappingCodec.f19Usage
-        }) {
-            throw HIDRemapError.conflictingMapping
+        var keyboardCount: UInt32 = 0
+        var mappedCount: UInt32 = 0
+        let status = CapswitchRemapperApply(manager, &keyboardCount, &mappedCount)
+
+        keyboardServiceCount = keyboardCount
+        mappedServiceCount = mappedCount
+        isInstalled = status == 0 && keyboardCount > 0
+            && mappedCount == keyboardCount
+
+        guard status == 0, isInstalled else {
+            throw HIDRemapError.failure(status == 0 ? 7 : status)
         }
-
-        // The marker is written before modifying global HID state so the next
-        // launch can clean up an interrupted installation after a crash.
-        UserDefaults.standard.set(true, forKey: markerKey)
-        try writeMappings(current + [ourMapping])
-
-        guard try readMappings().contains(ourMapping) else {
-            throw HIDRemapError.verificationFailed
-        }
-
-        ownsMapping = true
-        isInstalled = true
     }
 
     func reapplyIfOwned() throws {
-        guard ownsMapping || UserDefaults.standard.bool(forKey: markerKey) else {
-            throw HIDRemapError.conflictingMapping
+        // Reconciliation is idempotent: the native layer checks every
+        // keyboard and only installs missing mappings it can safely own.
+        try ensureInstalled()
+    }
+
+    func inspect() throws {
+        guard let manager else {
+            throw HIDRemapError.failure(1)
         }
 
-        let current = try readMappings()
-        guard current.contains(ourMapping) else {
-            try ensureInstalled()
-            return
-        }
+        var keyboardCount: UInt32 = 0
+        var mappedCount: UInt32 = 0
+        let status = CapswitchRemapperInspect(manager, &keyboardCount, &mappedCount)
+        keyboardServiceCount = keyboardCount
+        mappedServiceCount = mappedCount
 
-        // Re-broadcast the complete mapping table, never an empty replacement.
-        try writeMappings(current)
-        guard try readMappings().contains(ourMapping) else {
-            throw HIDRemapError.verificationFailed
+        guard status == 0 else {
+            throw HIDRemapError.failure(status)
         }
-
-        isInstalled = true
     }
 
     func restoreIfOwned() throws {
-        guard ownsMapping || UserDefaults.standard.bool(forKey: markerKey) else {
-            isInstalled = false
-            return
+        guard let manager else {
+            throw HIDRemapError.failure(1)
         }
 
-        let current = try readMappings()
-
-        if current.contains(ourMapping) {
-            // Remove only our exact pair, preserving any changes made by
-            // another remapper while Capswitch was running.
-            try writeMappings(current.filter { $0 != ourMapping })
-
-            if try readMappings().contains(ourMapping) {
-                throw HIDRemapError.verificationFailed
-            }
+        let status = CapswitchRemapperRestore(manager)
+        guard status == 0 else {
+            throw HIDRemapError.failure(status)
         }
 
-        ownsMapping = false
         isInstalled = false
-        UserDefaults.standard.removeObject(forKey: markerKey)
-    }
-
-    private func readMappings() throws -> [HIDKeyMapping] {
-        let output = try runHidutil(["property", "--get", "UserKeyMapping"])
-
-        do {
-            return try HIDMappingCodec.parse(output)
-        } catch {
-            throw HIDRemapError.unreadableMapping
-        }
-    }
-
-    private func writeMappings(_ mappings: [HIDKeyMapping]) throws {
-        let argument = try HIDMappingCodec.setArgument(mappings)
-        _ = try runHidutil(["property", "--set", argument])
-    }
-
-    private func runHidutil(_ arguments: [String]) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/hidutil")
-        process.arguments = arguments
-
-        let output = Pipe()
-        let errors = Pipe()
-        process.standardOutput = output
-        process.standardError = errors
-
-        do {
-            try process.run()
-        } catch {
-            throw HIDRemapError.commandFailed(error.localizedDescription)
-        }
-
-        process.waitUntilExit()
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        let errorData = errors.fileHandleForReading.readDataToEndOfFile()
-        let message = String(decoding: errorData, as: UTF8.self)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard process.terminationStatus == 0 else {
-            throw HIDRemapError.commandFailed(
-                message.isEmpty ? "exit code \(process.terminationStatus)" : message
-            )
-        }
-
-        return String(decoding: data, as: UTF8.self)
+        keyboardServiceCount = 0
+        mappedServiceCount = 0
     }
 }

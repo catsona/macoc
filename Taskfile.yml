@@ -63,10 +63,11 @@ tasks:
       - grep -q "keyboardEventKeycode" Sources/CapswitchApp/MacOSInputController.swift
       - grep -q "CapsInputRouter.f19VirtualKeyCode" Sources/CapswitchApp/MacOSInputController.swift
       - test -f Sources/CapswitchApp/HIDRemappingController.swift
-      - test -f Sources/Capswitch/HIDMapping.swift
       - test -f Sources/CapswitchHID/CapswitchHID.c
+      - test -f Sources/CapswitchHID/CapswitchRemapping.c
+      - grep -q "IOHIDServiceClientSetProperty" Sources/CapswitchHID/CapswitchRemapping.c
+      - '! grep -R -E "Process\(|/usr/bin/hidutil" Sources'
       - test -f Tests/CapswitchCoreTests/CapsInputRouterTests.swift
-      - test -f Tests/CapswitchCoreTests/HIDMappingCodecTests.swift
       - grep -q "CGEvent.tapCreate" Sources/CapswitchApp/MacOSInputController.swift
       - grep -q "CGEvent.tapEnable" Sources/CapswitchApp/MacOSInputController.swift
       - grep -q "CGPreflightListenEventAccess" Sources/CapswitchApp/MacOSInputController.swift
@@ -78,49 +79,18 @@ tasks:
       - grep -q "switchToNextInputSource" Sources/Capswitch/CapsGestureMachine.swift
 
   doctor:
-    desc: Inspect macOS Caps preferences, remapping and running Capswitch processes
+    desc: Inspect keyboard services through Capswitch's own native IOKit code
     cmds:
       - |
         if [ "$(uname -s)" != "Darwin" ]; then
-          echo "SKIP: HID diagnostics require macOS."
+          echo "SKIP: native HID diagnostics require macOS."
           exit 0
         fi
-        echo "=== macOS ==="
-        sw_vers
-        echo "=== Native Caps input-source setting (1=enabled, 0=disabled) ==="
-        defaults read -g TISRomanSwitchState 2>/dev/null || true
-        defaults read com.apple.HIToolbox TISRomanSwitchState 2>/dev/null || true
-        echo "=== Global HID remappings ==="
-        mapping="$(hidutil property --get UserKeyMapping 2>&1)" || {
-          echo "$mapping"
-          echo "ERROR: hidutil could not read UserKeyMapping." >&2
+        if [ ! -x "{{.APP_DIR}}/Contents/MacOS/{{.APP_NAME}}" ]; then
+          echo "Build the Capswitch app first: task bundle" >&2
           exit 1
-        }
-        echo "$mapping"
-        echo "=== HID keyboard services (may vary by keyboard) ==="
-        hidutil property --matching '{"PrimaryUsagePage":1,"PrimaryUsage":6}' --get UserKeyMapping || true
-        echo "=== Running Capswitch processes ==="
-        pgrep -fl Capswitch || true
-        echo "=== Diagnosis ==="
-        case "$mapping" in
-          *"(null)"* | *"()"*)
-            echo "NO HID REMAP ACTIVE: physical Caps cannot arrive as F19."
-            echo "Capswitch can be running without a working event tap or remap."
-            echo "Check Capswitch menu: Accessibility, Event tap, HID and Error."
-            echo "On Sonoma, /usr/bin/hidutil may need its OWN Input Monitoring approval."
-            echo "Grant it via Privacy & Security -> Input Monitoring -> + -> Cmd+Shift+G -> /usr/bin/hidutil."
-            echo "That is separate from permission for Capswitch.app."
-            ;;
-          *"HIDKeyboardModifierMappingSrc"*)
-            echo "Mapping entries exist. Verify Caps -> F19 in the output above."
-            ;;
-          *)
-            echo "Unrecognized mapping output. Check the raw values above."
-            ;;
-        esac
-        echo "=== Privacy permissions ==="
-        echo "The terminal cannot verify the running app's TCC status."
-        echo "Inspect Accessibility / Input Monitoring / Event tap / Error in its menu."
+        fi
+        "{{.APP_DIR}}/Contents/MacOS/{{.APP_NAME}}" --doctor
 
   clean:
     desc: Remove build outputs

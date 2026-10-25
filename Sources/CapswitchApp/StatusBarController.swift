@@ -32,7 +32,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         keyEquivalent: ""
     )
     private let reapplyMappingItem = NSMenuItem(
-        title: "Reapply Caps → F19 mapping",
+        title: "Retry Caps → F19 mapping",
         action: #selector(reapplyMapping),
         keyEquivalent: ""
     )
@@ -87,6 +87,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             object: nil
         )
 
+        inputController.requestRequiredPermissions()
         refreshController()
     }
 
@@ -151,10 +152,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
            now >= nextStartAttempt {
             nextStartAttempt = now.addingTimeInterval(5)
 
-            do {
-                try inputController.start()
-            } catch {
-                inputController.lastError = error.localizedDescription
+            if inputController.isTapEnabled {
+                inputController.repairMappingIfNeeded()
+            } else {
+                do {
+                    try inputController.start()
+                } catch {
+                    inputController.lastError = error.localizedDescription
+                }
             }
         }
 
@@ -184,10 +189,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         tapStatusItem.isEnabled = false
 
         hidMappingItem.title = inputController.hidMappingConfigured
-            ? "HID Caps → F19: configured (verify physical keyboard)"
-            : "HID Caps → F19: not configured"
+            ? "Native HID: \(inputController.mappingStatus)"
+            : "Native HID inactive: \(inputController.mappingStatus)"
         hidMappingItem.isEnabled = false
-        reapplyMappingItem.isEnabled = inputController.isRunning
+        reapplyMappingItem.isEnabled = inputController.isTapEnabled
 
         errorItem.isHidden = inputController.lastError == nil
         errorItem.title = "Error: \(inputController.lastError ?? "")"
@@ -255,6 +260,16 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func quit() {
-        NSApp.terminate(nil)
+        if inputController.stop() {
+            NSApp.terminate(nil)
+        } else {
+            update()
+            let alert = NSAlert()
+            alert.messageText = "Caps Lock could not be restored"
+            alert.informativeText = inputController.lastError
+                ?? "The native HID service rejected the restoration."
+            alert.addButton(withTitle: "Keep Capswitch Running")
+            alert.runModal()
+        }
     }
 }

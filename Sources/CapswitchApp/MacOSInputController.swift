@@ -181,8 +181,12 @@ final class MacOSInputController {
         remapper.isInstalled
     }
 
-    // This key is an undocumented macOS preference; missing means unknown,
-    // not "off". The UI never changes the user's global keyboard settings.
+    var mappingStatus: String {
+        "\(remapper.mappedServiceCount)/\(remapper.keyboardServiceCount) keyboards"
+    }
+
+    // Undocumented macOS preference: only diagnostic, never modified by us.
+    // Missing means unknown, not off.
     var nativeCapsSwitchState: String {
         let value = UserDefaults.standard.object(forKey: "TISRomanSwitchState")
             ?? UserDefaults(suiteName: "com.apple.HIToolbox")?
@@ -274,7 +278,19 @@ final class MacOSInputController {
         onStateChanged?()
     }
 
-    func stop() {
+    @discardableResult
+    func stop() -> Bool {
+        // Restore the actual Caps key before disabling the F19 interceptor.
+        // If restoration fails, refuse a normal Pause/Quit so F19 cannot be
+        // left unhandled by an otherwise healthy running Capswitch.
+        do {
+            try remapper.restoreIfOwned()
+        } catch {
+            lastError = "Cannot restore Caps remap: \(error.localizedDescription)"
+            onStateChanged?()
+            return false
+        }
+
         if let eventTap {
             CGEvent.tapEnable(tap: eventTap, enable: false)
         }
@@ -290,13 +306,8 @@ final class MacOSInputController {
         eventTap = nil
         runLoopSource = nil
         resetGestureState()
-
-        do {
-            try remapper.restoreIfOwned()
-        } catch {
-            lastError = "Cannot restore Caps remap: \(error.localizedDescription)"
-        }
         onStateChanged?()
+        return true
     }
 
     func setPaused(_ paused: Bool) {
@@ -304,10 +315,12 @@ final class MacOSInputController {
             return
         }
 
-        isPaused = paused
         if paused {
-            stop()
+            if stop() {
+                isPaused = true
+            }
         } else {
+            isPaused = false
             do {
                 try start()
             } catch {
@@ -356,6 +369,21 @@ final class MacOSInputController {
             lastError = error.localizedDescription
         }
         onStateChanged?()
+    }
+
+    func requestRequiredPermissions() {
+        if !accessibilityTrusted {
+            let options = [
+                kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String:
+                    true as CFBoolean
+            ] as CFDictionary
+            _ = AXIsProcessTrustedWithOptions(options)
+        }
+
+        if !inputMonitoringTrusted {
+            // Request Input Monitoring for our own application identity.
+            _ = CGRequestListenEventAccess()
+        }
     }
 
     func requestInputMonitoringPermission() {
