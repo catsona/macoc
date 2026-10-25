@@ -165,13 +165,13 @@ final class MacOSInputController {
 
         let eventMask = CGEventMask(1 << CGEventType.flagsChanged.rawValue)
         let refcon = Unmanaged.passUnretained(self).toOpaque()
-        guard let tap = CGEventTapCreate(
-            .cgSessionEventTap,
-            .headInsertEventTap,
-            .defaultTap,
-            eventMask,
-            Self.eventTapCallback,
-            refcon
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: eventMask,
+            callback: Self.eventTapCallback,
+            userInfo: refcon
         ) else {
             throw InputControllerError.eventTapUnavailable
         }
@@ -191,14 +191,14 @@ final class MacOSInputController {
             )
         }
 
-        CGEventTapEnable(tap, true)
+        CGEvent.tapEnable(tap: tap, enable: true)
         resetGestureState()
         onStateChanged?()
     }
 
     func stop() {
         if let eventTap {
-            CGEventTapEnable(eventTap, false)
+            CGEvent.tapEnable(tap: eventTap, enable: false)
         }
 
         if let runLoopSource {
@@ -255,7 +255,7 @@ final class MacOSInputController {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             resetGestureState()
             if let eventTap {
-                CGEventTapEnable(eventTap, true)
+                CGEvent.tapEnable(tap: eventTap, enable: true)
             }
             return Unmanaged.passUnretained(event)
         }

@@ -55,6 +55,10 @@ tasks:
       - test -f Sources/CapswitchApp/MacOSInputController.swift
       - grep -q "LSUIElement" Resources/Info.plist
       - grep -q ".flagsChanged" Sources/CapswitchApp/MacOSInputController.swift
+      - grep -q "CGEvent.tapCreate" Sources/CapswitchApp/MacOSInputController.swift
+      - grep -q "CGEvent.tapEnable" Sources/CapswitchApp/MacOSInputController.swift
+      - test "$(grep -c "CGEventTapCreate" Sources/CapswitchApp/MacOSInputController.swift || true)" -eq 0
+      - test "$(grep -c "CGEventTapEnable" Sources/CapswitchApp/MacOSInputController.swift || true)" -eq 0
       - grep -q "TISSelectInputSource" Sources/CapswitchApp/MacOSInputController.swift
       - grep -q "switchToNextInputSource" Sources/Capswitch/CapsGestureMachine.swift
 
