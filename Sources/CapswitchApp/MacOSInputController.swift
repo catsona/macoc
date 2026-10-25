@@ -267,15 +267,22 @@ final class MacOSInputController {
         let flags = event.flags
         let newAlphaShiftDown = flags.contains(.maskAlphaShift)
         let newOptionDown = flags.contains(.maskAlternate)
+        let isCapsEvent = event.getIntegerValueField(.keyboardEventKeycode)
+            == Int64(Self.capsLockKeyCode)
 
         if isPaused {
-            alphaShiftDown = newAlphaShiftDown
+            if isCapsEvent {
+                alphaShiftDown = newAlphaShiftDown
+            }
             optionDown = newOptionDown
             return Unmanaged.passUnretained(event)
         }
 
-        let capsDown = newAlphaShiftDown && !alphaShiftDown
-        let capsUp = !newAlphaShiftDown && alphaShiftDown
+        // Alpha-shift is also used by other keyboard events. Use the physical
+        // key code so a fast sequence of unrelated flagsChanged events cannot
+        // be mistaken for a Caps Lock edge.
+        let capsDown = isCapsEvent && newAlphaShiftDown && !alphaShiftDown
+        let capsUp = isCapsEvent && !newAlphaShiftDown && alphaShiftDown
         let optionPressed = newOptionDown && !optionDown
         let optionReleased = !newOptionDown && optionDown
 
@@ -303,7 +310,9 @@ final class MacOSInputController {
             action = combine(action, gestureMachine.handle(.optionUp))
         }
 
-        alphaShiftDown = newAlphaShiftDown
+        if isCapsEvent {
+            alphaShiftDown = newAlphaShiftDown
+        }
         optionDown = newOptionDown
         apply(action)
 
@@ -319,8 +328,16 @@ final class MacOSInputController {
         case .none:
             break
         case .switchToNextInputSource:
-            if inputSources.selectNextInputSource() {
-                onStateChanged?()
+            // TISSelectInputSource can synchronously trigger more keyboard
+            // notifications. Let the event tap return first so a rapid key +
+            // Caps sequence sees the new source before the next key is typed.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.isRunning, !self.isPaused else {
+                    return
+                }
+                if self.inputSources.selectNextInputSource() {
+                    self.onStateChanged?()
+                }
             }
         case .toggleCapsLock:
             postSyntheticCapsLock()
