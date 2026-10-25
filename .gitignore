@@ -3,3 +3,4 @@ build/
 .swiftpm/
 .task/
 .build/
+dist/

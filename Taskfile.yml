@@ -1,124 +1,71 @@
 version: '3'
 
-vars:
-  APP_NAME: Capswitch
-  APP_DIR: build/Capswitch.app
-  RELEASE_BINARY: .build/release/Capswitch
-
 tasks:
   default:
     cmds:
-      - task: verify
-
-  test:
-    desc: Run XCTest on macOS, or report the host limitation on Linux
-    cmds:
-      - |
-        if command -v swift >/dev/null 2>&1 && [ "$(uname -s)" = "Darwin" ]; then
-          swift test
-        else
-          echo "SKIP: Swift/XCTest requires macOS with Command Line Tools"
-        fi
-
-  build:
-    desc: Build the macOS executable with SwiftPM
-    cmds:
-      - |
-        if [ "$(uname -s)" != "Darwin" ]; then
-          echo "SKIP: macOS build requires Darwin with Command Line Tools"
-          exit 0
-        fi
-        swift build -c release
-
-  bundle:
-    desc: Assemble and ad-hoc sign the menu-bar .app
-    deps: [build]
-    cmds:
-      - |
-        if [ "$(uname -s)" != "Darwin" ]; then
-          echo "SKIP: macOS app bundle requires Darwin with Command Line Tools"
-          exit 0
-        fi
-        if pgrep -x Capswitch >/dev/null 2>&1; then
-          echo "ERROR: Quit running Capswitch from its menu before rebuilding." >&2
-          exit 1
-        fi
-        rm -rf "{{.APP_DIR}}"
-        mkdir -p "{{.APP_DIR}}/Contents/MacOS" "{{.APP_DIR}}/Contents/Resources"
-        cp "{{.RELEASE_BINARY}}" "{{.APP_DIR}}/Contents/MacOS/{{.APP_NAME}}"
-        cp Resources/Info.plist "{{.APP_DIR}}/Contents/Info.plist"
-        codesign --force --sign - "{{.APP_DIR}}"
-
-  install:
-    desc: Install Capswitch into ~/Applications and open it (no sudo)
-    deps: [bundle]
-    cmds:
-      - |
-        if [ "$(uname -s)" != "Darwin" ]; then
-          echo "SKIP: installation requires macOS."
-          exit 0
-        fi
-        "{{.APP_DIR}}/Contents/MacOS/{{.APP_NAME}}" --install
-        open "$HOME/Applications/{{.APP_NAME}}.app"
+      - bash scripts/verify.sh
 
   lint:
-    desc: Run host-independent source and bundle checks
+    desc: Run shell and source checks
     cmds:
-      - git diff --check
-      - test -f Package.swift
-      - test -f Resources/Info.plist
-      - test -f Sources/Capswitch/CapsGestureMachine.swift
-      - test -f Sources/CapswitchApp/MacOSInputController.swift
-      - grep -q "LSUIElement" Resources/Info.plist
-      - grep -q "CGEventType.keyDown" Sources/CapswitchApp/MacOSInputController.swift
-      - grep -q "CGEventType.keyUp" Sources/CapswitchApp/MacOSInputController.swift
-      - grep -q "keyboardEventKeycode" Sources/CapswitchApp/MacOSInputController.swift
-      - grep -q "CapsInputRouter.f19VirtualKeyCode" Sources/CapswitchApp/MacOSInputController.swift
-      - test -f Sources/CapswitchApp/HIDRemappingController.swift
-      - test -f Sources/CapswitchApp/InputSourceManager.swift
-      - test -f Sources/CapswitchApp/ApplicationRelauncher.swift
-      - test -f Sources/CapswitchApp/ApplicationLifecycleController.swift
-      - test -f Sources/CapswitchApp/LoginItemManager.swift
-      - test -f Sources/CapswitchApp/AppInstallationManager.swift
-      - grep -q "SMAppService.mainApp" Sources/CapswitchApp/LoginItemManager.swift
-      - test -f Tests/CapswitchCoreTests/LaunchArgumentsTests.swift
-      - test -f Sources/CapswitchHID/CapswitchHID.c
-      - test -f Sources/CapswitchHID/CapswitchRemapping.c
-      - grep -q "IOHIDServiceClientSetProperty" Sources/CapswitchHID/CapswitchRemapping.c
-      - '! grep -R -F "/usr/bin/hidutil" Sources'
-      - grep -q "child.executableURL = executableURL" Sources/CapswitchApp/ApplicationRelauncher.swift
-      - test -f Tests/CapswitchCoreTests/CapsInputRouterTests.swift
-      - grep -q "CGEvent.tapCreate" Sources/CapswitchApp/MacOSInputController.swift
-      - grep -q "CGEvent.tapEnable" Sources/CapswitchApp/MacOSInputController.swift
-      - grep -q "CGPreflightListenEventAccess" Sources/CapswitchApp/MacOSInputController.swift
-      - grep -q "CGRequestListenEventAccess" Sources/CapswitchApp/MacOSInputController.swift
-      - grep -q "CGEvent.tapIsEnabled" Sources/CapswitchApp/MacOSInputController.swift
-      - test "$(grep -c "CGEventTapCreate" Sources/CapswitchApp/MacOSInputController.swift || true)" -eq 0
-      - test "$(grep -c "CGEventTapEnable" Sources/CapswitchApp/MacOSInputController.swift || true)" -eq 0
-      - grep -q "TISSelectInputSource" Sources/CapswitchApp/InputSourceManager.swift
-      - grep -q "switchToNextInputSource" Sources/Capswitch/CapsGestureMachine.swift
+      - bash scripts/lint.sh
+
+  test:
+    desc: Run Swift XCTest on macOS
+    cmds:
+      - bash scripts/test.sh
+
+  build:
+    desc: Compile macoc with SwiftPM
+    cmds:
+      - bash scripts/build.sh
+
+  icon:
+    desc: Convert the icon source into an Apple .icns file
+    cmds:
+      - bash scripts/icon.sh
+
+  sign:
+    desc: Sign the existing app bundle
+    cmds:
+      - bash scripts/sign.sh
+
+  bundle:
+    desc: Build a signed macoc.app
+    cmds:
+      - bash scripts/bundle.sh
+
+  install:
+    desc: Build, install to ~/Applications and launch
+    cmds:
+      - bash scripts/install.sh
 
   doctor:
-    desc: Inspect keyboard services through Capswitch's own native IOKit code
+    desc: Inspect keyboard services through native IOKit
     cmds:
-      - |
-        if [ "$(uname -s)" != "Darwin" ]; then
-          echo "SKIP: native HID diagnostics require macOS."
-          exit 0
-        fi
-        if [ ! -x "{{.APP_DIR}}/Contents/MacOS/{{.APP_NAME}}" ]; then
-          echo "Build the Capswitch app first: task bundle" >&2
-          exit 1
-        fi
-        "{{.APP_DIR}}/Contents/MacOS/{{.APP_NAME}}" --doctor
+      - bash scripts/doctor.sh
 
   clean:
-    desc: Remove build outputs
+    desc: Remove SwiftPM and packaged outputs
     cmds:
-      - rm -rf build .build
+      - bash scripts/clean.sh
 
   verify:
-    desc: Run all checks available on the current host
+    desc: Run all available checks
     cmds:
-      - task: lint
-      - task: test
+      - bash scripts/verify.sh
+
+  package:
+    desc: Build a release zip and SHA-256 checksum
+    cmds:
+      - bash scripts/package.sh
+
+  signing-setup:
+    desc: Instructions for creating a stable local signing identity
+    cmds:
+      - bash scripts/setup-signing.sh
+
+  publish:
+    desc: Publish dist/ zip to Forgejo (requires FORGEJO_TOKEN)
+    cmds:
+      - bash scripts/publish-release.sh

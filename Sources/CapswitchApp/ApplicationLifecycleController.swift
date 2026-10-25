@@ -8,7 +8,7 @@ enum ApplicationLifecycleError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingExecutable:
-            return "Unable to locate the bundled Capswitch executable."
+            return "Unable to locate the bundled macoc executable."
         case let .couldNotRestoreCaps(details):
             return "Caps Lock was not restored: \(details)"
         }
@@ -54,7 +54,7 @@ final class ApplicationLifecycleController {
     }
 
     func restartInstalledCopy(at applicationURL: URL) throws {
-        let executableURL = applicationURL.appendingPathComponent("Contents/MacOS/Capswitch")
+        let executableURL = applicationURL.appendingPathComponent("Contents/MacOS/macoc")
         try relaunch(executableURL: executableURL)
     }
 

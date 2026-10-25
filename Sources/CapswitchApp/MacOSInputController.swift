@@ -13,9 +13,9 @@ enum InputControllerError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .accessibilityRequired:
-            return "Accessibility permission is required. Open the Capswitch menu to grant it."
+            return "Accessibility permission is required. Open the macoc menu to grant it."
         case .inputMonitoringRequired:
-            return "Keyboard tap refused. Grant Input Monitoring from the Capswitch menu."
+            return "Keyboard tap refused. Grant Input Monitoring from the macoc menu."
         case .eventTapUnavailable:
             return "macOS did not allow the keyboard event tap. Check Accessibility and Input Monitoring permissions."
         }
@@ -159,7 +159,7 @@ final class MacOSInputController {
     func stop() -> Bool {
         // Restore the actual Caps key before disabling the F19 interceptor.
         // If restoration fails, refuse a normal Pause/Quit so F19 cannot be
-        // left unhandled by an otherwise healthy running Capswitch.
+        // left unhandled by an otherwise healthy running macoc.
         do {
             try remapper.restoreIfOwned()
         } catch {
@@ -257,10 +257,9 @@ final class MacOSInputController {
             _ = AXIsProcessTrustedWithOptions(options)
         }
 
-        if !inputMonitoringTrusted {
-            // Request Input Monitoring for our own application identity.
-            _ = CGRequestListenEventAccess()
-        }
+        // Input Monitoring is optional for an Accessibility-authorized active
+        // event tap. Do not prompt on every launch when it is not needed.
+        // If creating the tap fails, the menu exposes an explicit grant path.
     }
 
     func requestInputMonitoringPermission() {

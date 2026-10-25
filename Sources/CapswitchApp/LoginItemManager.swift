@@ -7,7 +7,7 @@ enum LoginItemError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .installFirst:
-            return "Install Capswitch to ~/Applications before enabling launch at login."
+            return "Install macoc to ~/Applications before enabling launch at login."
         }
     }
 }

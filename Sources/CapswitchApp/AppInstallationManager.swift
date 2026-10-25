@@ -12,13 +12,13 @@ enum AppInstallationError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidSource:
-            return "Capswitch must be launched from a valid .app bundle."
+            return "macoc must be launched from a valid .app bundle."
         case .alreadyInstalled:
-            return "This copy of Capswitch is already installed."
+            return "This copy of macoc is already installed."
         case .destinationContainsAnotherApp:
             return "The destination contains another application. It will not be overwritten."
         case .installedCopyRunning:
-            return "Quit the installed Capswitch first, then retry installation."
+            return "Quit the installed macoc first, then retry installation."
         case .unsafeDestination:
             return "The installation destination is a symbolic link. No files were changed."
         case let .rollbackFailed(backupPath):
@@ -36,7 +36,7 @@ final class AppInstallationManager {
     var installedURL: URL {
         fileManager.homeDirectoryForCurrentUser
             .appendingPathComponent("Applications", isDirectory: true)
-            .appendingPathComponent("Capswitch.app", isDirectory: true)
+            .appendingPathComponent("macoc.app", isDirectory: true)
     }
 
     var isRunningInstalledCopy: Bool {
@@ -86,10 +86,10 @@ final class AppInstallationManager {
 
         let token = UUID().uuidString
         let staging = parent.appendingPathComponent(
-            ".Capswitch-stage-\(token).app", isDirectory: true
+            ".macoc-stage-\(token).app", isDirectory: true
         )
         let backup = parent.appendingPathComponent(
-            ".Capswitch-backup-\(token).app", isDirectory: true
+            ".macoc-backup-\(token).app", isDirectory: true
         )
 
         defer {
@@ -102,7 +102,7 @@ final class AppInstallationManager {
 
         guard Bundle(url: staging)?.bundleIdentifier == expectedBundleID,
               fileManager.isExecutableFile(
-                atPath: staging.appendingPathComponent("Contents/MacOS/Capswitch").path
+                atPath: staging.appendingPathComponent("Contents/MacOS/macoc").path
               ) else {
             throw AppInstallationError.invalidSource
         }

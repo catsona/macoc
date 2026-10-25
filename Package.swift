@@ -2,10 +2,10 @@
 import PackageDescription
 
 let package = Package(
-    name: "Capswitch",
+    name: "macoc",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "Capswitch", targets: ["Capswitch"]),
+        .executable(name: "macoc", targets: ["macoc"]),
     ],
     targets: [
         .target(
@@ -13,7 +13,7 @@ let package = Package(
             path: "Sources/Capswitch"
         ),
         .executableTarget(
-            name: "Capswitch",
+            name: "macoc",
             dependencies: ["CapswitchCore", "CapswitchHID"],
             path: "Sources/CapswitchApp",
             linkerSettings: [

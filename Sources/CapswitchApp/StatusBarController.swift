@@ -74,7 +74,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         keyEquivalent: ""
     )
     private let restartItem = NSMenuItem(
-        title: "Restart Capswitch",
+        title: "Restart macoc",
         action: #selector(restartApplication),
         keyEquivalent: ""
     )
@@ -143,7 +143,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(NSMenuItem.separator())
 
         let quitItem = NSMenuItem(
-            title: "Quit Capswitch",
+            title: "Quit macoc",
             action: #selector(quit),
             keyEquivalent: "q"
         )
@@ -165,7 +165,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
 
         statusItem.menu = menu
-        statusItem.button?.toolTip = "Capswitch"
+        statusItem.button?.toolTip = "macoc"
     }
 
     private func refreshController() {
@@ -211,7 +211,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         statusItem.button?.title = inputController.isRunning
             ? inputController.currentInputSourceShortName
             : "Caps!"
-        statusItem.button?.toolTip = "Capswitch - \(name)"
+        statusItem.button?.toolTip = "macoc - \(name)"
 
         currentLayoutItem.title = "Current layout: \(name)"
         diagnosticsItem.title = inputController.diagnosticsSummary
@@ -310,9 +310,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     @objc private func installApplication() {
         let alert = NSAlert()
-        alert.messageText = "Install Capswitch?"
+        alert.messageText = "Install macoc?"
         alert.informativeText =
-            "Copy this version to ~/Applications/Capswitch.app and launch it from there. " +
+            "Copy this version to ~/Applications/macoc.app and launch it from there. " +
             "No administrator privileges are required."
         alert.addButton(withTitle: "Install and Launch")
         alert.addButton(withTitle: "Cancel")
@@ -334,7 +334,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         } catch {
             showError(
                 "Installed, but could not relaunch",
-                message: "Capswitch was installed to ~/Applications. " +
+                message: "macoc was installed to ~/Applications. " +
                     error.localizedDescription
             )
         }

@@ -1,116 +1,128 @@
-# Capswitch
+# macoc
 
-Native macOS menu-bar keyboard layout switcher, targeting macOS 14+.
+Native macOS menu-bar layout switcher for macOS Sonoma (14+) without
+the stock Caps Lock delay. Plain **Caps** switches to the next configured
+input source on **release**, including during fast typing. **Option+Caps**
+in either order toggles the real system Caps Lock state.
 
-- Plain physical Caps: switch to the next enabled input source on **release**,
-  bypassing the stock Caps delay and input-source HUD.
-- Caps + Option in either order: toggle the real system Caps Lock state.
+The icon is a SFW cartoon of someone thoroughly fed up with keyboard
+layout switching, complete with a literally hot seat.
 
 ## Architecture
 
-The signed Capswitch executable itself uses IOKit to remap physical Caps
-(HID usage 0x39) to F19 (usage 0x6E). Its active CoreGraphics event tap
-suppresses F19 down/up events and switches through Carbon TIS on F19 release.
-The small native C bridge is compiled into the app; there is no external
-hidutil process, driver, helper, LaunchAgent or root component.
+Caps Lock is remapped to F19 via in-process Apple IOKit APIs, then suppressed
+by a CoreGraphics event tap. Layouts switch through Carbon TIS. No drivers,
+root daemons, third-party input libraries or hidutil permission required.
 
-Apple API reference: https://developer.apple.com/library/archive/technotes/tn2450/
+Apple technical note: https://developer.apple.com/library/archive/technotes/tn2450/
 
-## Build, install and autostart
+## Build and install
 
-Install Apple's Command Line Tools and the Task runner. Full Xcode is not
-required. Quit any running Capswitch from its status-bar menu before rebuilding.
+Requires Apple's Command Line Tools (not the Xcode IDE). Task is optional.
 
-For development:
+Quit any running **macoc** or legacy **Capswitch** before rebuilding.
+From this repository:
 
     git pull origin main
-    task test
-    task bundle
-    open build/Capswitch.app
+    bash scripts/test.sh
+    bash scripts/install.sh
 
-For daily use, install without sudo into ~/Applications/Capswitch.app:
+With Task installed:
 
-    git pull origin main
     task test
     task install
 
-The Taskfile builds, installs and opens the installed copy.
+Installation creates a signed macoc.app with the .icns icon in the stable
+user-owned location ~/Applications/macoc.app, then starts it through
+LaunchServices. No sudo is needed.
 
-Alternatively, open the development build and choose **Install to
-~/Applications...** in the menu. Capswitch copies itself and restarts into the
-installed copy. If an older installed Capswitch is still running, quit it
-before reinstalling. Only bundles with the same bundle ID can be replaced.
+For development without installing: bash scripts/bundle.sh or task bundle.
 
-From the installed copy, click **Launch at Login** in the menu. This uses
-Apple's SMAppService.mainApp, not an ad-hoc LaunchAgent. If the menu says
-approval required, open **General -> Login Items** in System Settings and
-approve Capswitch. Click the same menu item to disable auto-start.
-Launch at Login is disabled for development builds to avoid registering
-a temporary build/ path.
+The menu offers **Restart macoc**, **Install to ~/Applications…** and
+**Launch at Login**, registered via Apple's SMAppService.mainApp. If macOS
+requests approval, open System Settings -> General -> Login Items.
 
-The menu also has **Restart Capswitch**. It restores the Caps HID mapping
-before exiting and launches a new copy of the same executable after the
-old process is gone.
+### Migrating from Capswitch
 
-The app has a stable bundle identifier (dev.local.Capswitch) and is signed
-ad-hoc. macOS may require re-approval for Accessibility/Input Monitoring
-when moving from build/ to ~/Applications or replacing an ad-hoc signature.
+The name and executable are now macoc; the existing bundle identifier
+remains dev.local.Capswitch to preserve old Accessibility grants and HID
+ownership data where macOS permits. Do not run the old Capswitch and macoc
+simultaneously. If the old ~/Applications/Capswitch.app is installed, quit
+it and disable its Login Item before installing macoc. Then you may delete
+the old app bundle.
 
-## Privacy permissions
+## Code signing and repeat Accessibility prompts
 
-On first launch the app requests permissions under its own identity:
-- Accessibility to suppress F19.
-- Input Monitoring when macOS needs it to observe keyboard events.
+Restart now uses LaunchServices (open -n -a) instead of executing a raw
+binary under Contents/MacOS. That preserves the macOS .app attribution.
 
-Grant permissions to Capswitch only. No system executable needs extra
-permissions. Apple requires the user to approve them in System Settings.
+For identical app binaries at the same path, Accessibility approval normally
+persists through restarts. But ad-hoc signing does **not** provide a stable
+designated requirement across code changes: each rebuild may require
+approval again.
 
-Disable the stock macOS Caps layout toggle via
-**System Settings -> Keyboard -> Text Input -> Edit ->
-Use Caps Lock to switch to/from ABC**. Keep the key assigned to its normal
-Caps Lock role in Modifier Keys (not No Action).
-Capswitch does not secretly change these preferences.
+For stable identity across **rebuilt versions**, create one persistent
+local Code Signing certificate in Keychain Access named
+**macoc Local Signing** (Certificate Assistant -> Create a Certificate ->
+Self Signed Root -> Code Signing). Run bash scripts/setup-signing.sh or
+task signing-setup for the instructions. The build auto-detects that identity,
+or accepts MACOC_CODESIGN_IDENTITY for an existing signing certificate.
+It falls back to ad-hoc signing with an explicit warning otherwise.
 
-## Menu and diagnostics
+Moving to the installed path or changing the signer can still require
+**one new approval**. Keep the signing identity and app path stable.
 
-The status-bar menu shows current layout, native HID keyboard service
-mapping count, event tap status, permission status and diagnostics.
+Reference: https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements
 
-    F19 down/up counts; input source switches
+macoc cannot silently grant itself TCC permissions. macOS still asks the
+user to allow Accessibility (and optionally Input Monitoring) for the app,
+not for a system binary.
 
-No typed characters are recorded. If F19 counts increase but switches do not,
-inspect enabled TIS input sources. If counts remain zero, inspect the
-HID mapping and event tap status. Pause/normal Quit restore the physical
-Caps key and preserve unrelated keyboard mappings.
+Disable macOS's own "Use Caps Lock to switch to/from ABC" under
+System Settings -> Keyboard -> Text Input -> Edit. Keep physical Caps
+assigned its normal modifier role rather than No Action.
 
-Read-only native diagnostic mode:
+## Taskfile commands and shell equivalents
 
-    task doctor
+| Taskfile | No Task required |
+| --- | --- |
+| task lint | bash scripts/lint.sh |
+| task test | bash scripts/test.sh |
+| task verify | bash scripts/verify.sh |
+| task build | bash scripts/build.sh |
+| task icon | bash scripts/icon.sh |
+| task sign | bash scripts/sign.sh |
+| task bundle | bash scripts/bundle.sh |
+| task install | bash scripts/install.sh |
+| task doctor | bash scripts/doctor.sh |
+| task clean | bash scripts/clean.sh |
+| task package | bash scripts/package.sh |
+| task publish | bash scripts/publish-release.sh |
+| task signing-setup | bash scripts/setup-signing.sh |
 
-This executes Capswitch's own binary, not hidutil, and does not change keys.
+## Forgejo CI and releases
 
-## HID recovery and limitations
+The workflow at .forgejo/workflows/macos.yml builds and tests on pushes to
+main. A pushed tag such as v0.3.0 also creates a Forgejo release with a
+macOS .app ZIP and SHA-256 checksum, through the built-in scoped token.
 
-Capswitch preserves pre-existing key mappings and records ownership of
-its added Caps-to-F19 pair per keyboard service. It removes only owned
-pairs when paused or quit. A forcibly terminated app may leave a pair
-active until next clean Capswitch launch/quit, keyboard service removal,
-or reboot. To recover, reopen Capswitch and Quit normally.
+**A real Mac Forgejo runner labelled macos is required.** The Linux server
+cannot build AppKit or IOKit. See [CI setup](docs/ci.md). Until a Mac runner
+is registered and its job succeeds, no release build has been produced.
 
-If installation or restart fails to restore Caps, the app displays an
-error instead of silently quitting. If macOS loses permission, it surfaces
-that status in the menu.
+A release archive signed ad-hoc is intended for local evaluation.
+To distribute broadly without Gatekeeper warnings, use Developer ID
+signing and Apple's notarization service (not yet configured here).
 
-Development tasks:
+## Diagnostics and recovery
 
-    task verify
-    task lint
-    task test
-    task build
-    task bundle
-    task install
-    task doctor
-    task clean
+The status-bar menu shows layout, keyboard HID mapping count, event-tap state,
+permission grants, and F19 down/up counts (no typed characters are recorded).
+Run bash scripts/doctor.sh for read-only native HID diagnostics.
 
-The Linux RSB host can run static checks but has no Apple AppKit/IOKit SDK.
-The macOS build and real keyboard behavior must be verified on macOS.
+Pause or Quit normally restores Caps and preserves unrelated remappings.
+If the process is killed during a remap, restart and Quit normally; macOS
+usually resets mappings when a keyboard service disappears or after reboot.
+
+The Linux development VM verifies shell syntax and static source checks,
+not macOS compilation or live TCC behavior.

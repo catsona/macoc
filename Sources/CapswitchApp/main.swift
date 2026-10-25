@@ -11,7 +11,7 @@ case .doctor:
     let remapper = HIDRemappingController()
     do {
         try remapper.inspect()
-        print("Capswitch - native HID diagnostic")
+        print("macoc - native HID diagnostic")
         print("Keyboard services: \(remapper.keyboardServiceCount)")
         print("Caps → F19 mappings: \(remapper.mappedServiceCount)")
         if remapper.mappedServiceCount == remapper.keyboardServiceCount {
@@ -21,23 +21,23 @@ case .doctor:
         }
         exit(0)
     } catch {
-        fputs("Capswitch HID check: \(error.localizedDescription)\n", stderr)
+        fputs("macoc HID check: \(error.localizedDescription)\n", stderr)
         exit(1)
     }
 
 case .install:
     do {
         let location = try AppInstallationManager().install()
-        print("Installed Capswitch: \(location.path)")
+        print("Installed macoc: \(location.path)")
         exit(0)
     } catch {
-        fputs("Capswitch install: \(error.localizedDescription)\n", stderr)
+        fputs("macoc install: \(error.localizedDescription)\n", stderr)
         exit(1)
     }
 
 case let .waitForParent(pid):
     guard ApplicationRelauncher.waitForPreviousProcess(pid) else {
-        fputs("Capswitch restart aborted: previous instance did not exit.\n", stderr)
+        fputs("macoc restart aborted: previous instance did not exit.\n", stderr)
         exit(1)
     }
 
