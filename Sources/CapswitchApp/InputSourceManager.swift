@@ -9,6 +9,10 @@ final class InputSourceManager {
 
     private var orderedSources: [Source] = []
 
+    var currentInputSourceID: String? {
+        currentSource().flatMap { property($0, key: kTISPropertyInputSourceID) }
+    }
+
     var currentDisplayName: String {
         guard let source = currentSource() else {
             return "-"

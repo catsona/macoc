@@ -9,6 +9,15 @@ the stock Caps Lock delay. Plain **Caps** switches to the next configured
 input source on **release**, including during fast typing. **Option+Caps**
 in either order toggles the real system Caps Lock state.
 
+While switching is active, the Caps Lock LED indicates the input layout:
+off for U.S. or ABC (en-US), on for every other input source, including other
+English layouts. This does not change letter case; **Option+Caps** still
+controls the real Caps Lock state. Pause and Quit restore the LED to that state.
+The indicator follows changes made in the system input menu as well as Caps,
+and refreshes every second to handle keyboard connections and wake from sleep.
+It requires a keyboard exposing a writable HID Caps Lock LED; the diagnostics
+line reports unsupported LEDs or IOKit access errors without disabling switching.
+
 macoc keeps input switching simple. The icon is an SFW illustration
 of exactly how frustrating the old Caps Lock behavior can feel.
 
