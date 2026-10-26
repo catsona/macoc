@@ -1,3 +1,4 @@
+import AppKit
 import Carbon
 import Foundation
 
@@ -8,6 +9,8 @@ final class InputSourceManager {
     }
 
     private var orderedSources: [Source] = []
+    private var sourceIcons: [String: NSImage] = [:]
+    private var iconProvider = InputSourceIconProvider()
 
     var currentDisplayName: String {
         guard let source = currentSource() else {
@@ -27,8 +30,26 @@ final class InputSourceManager {
         return name
     }
 
+    var currentIcon: NSImage? {
+        guard let source = currentSource(),
+              let id = property(source, key: kTISPropertyInputSourceID) else {
+            return nil
+        }
+        if let icon = sourceIcons[id] {
+            return icon
+        }
+
+        guard let icon = iconProvider.icon(for: source) else {
+            return nil
+        }
+        sourceIcons[id] = icon
+        return icon
+    }
+
     func refresh() {
         orderedSources = enabledKeyboardSourcesInUserOrder()
+        sourceIcons.removeAll()
+        iconProvider = InputSourceIconProvider()
     }
 
     @discardableResult

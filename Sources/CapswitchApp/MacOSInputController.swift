@@ -84,6 +84,10 @@ final class MacOSInputController {
         inputSources.currentShortName
     }
 
+    var currentInputSourceIcon: NSImage? {
+        inputSources.currentIcon
+    }
+
     var accessibilityTrusted: Bool {
         AXIsProcessTrusted()
     }

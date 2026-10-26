@@ -208,9 +208,14 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     private func update() {
         let name = inputController.currentInputSourceName
-        statusItem.button?.title = inputController.isRunning
-            ? inputController.currentInputSourceShortName
-            : "Caps!"
+        if let button = statusItem.button {
+            let icon = inputController.isRunning ? inputController.currentInputSourceIcon : nil
+            button.image = icon
+            button.title = inputController.isRunning
+                ? (icon == nil ? inputController.currentInputSourceShortName : "")
+                : "Caps!"
+            button.setAccessibilityLabel("macoc - \(name)")
+        }
         statusItem.button?.toolTip = "macoc - \(name)"
 
         currentLayoutItem.title = "Current layout: \(name)"
