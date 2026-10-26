@@ -3,6 +3,7 @@ source "$(dirname "$0")/common.sh"
 
 if [[ "$IS_MACOS" == 1 ]]; then
   cd "$ROOT"
+  bash "$ROOT/scripts/test-input-source-icons.sh"
   swift test
 elif command -v swift >/dev/null 2>&1; then
   bash "$ROOT/scripts/test-linux-core.sh"

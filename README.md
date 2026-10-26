@@ -9,8 +9,11 @@ the stock Caps Lock delay. Plain **Caps** switches to the next configured
 input source on **release**, including during fast typing. **Option+Caps**
 in either order toggles the real system Caps Lock state.
 
-The menu bar shows the current input source's system icon, with its name in
-the tooltip. If no icon is available, it shows a short name instead.
+The menu bar shows a distinct system input-source badge (for example, **US**
+or **РУ**), with its name in the tooltip. These badges come from macOS's private
+KeyboardLayouts framework, resolved at runtime. If that API is unavailable,
+macoc uses the source's icon URL or a short name, never the generic TIS keyboard
+icon shared by multiple locales. Private APIs can change between macOS releases.
 When switching is inactive, the indicator reads **Caps!**.
 
 macoc keeps input switching simple. The icon is an SFW illustration
@@ -77,6 +80,11 @@ user-owned location ~/Applications/macoc.app, then starts it through
 LaunchServices. No sudo is needed.
 
 For development without installing: bash scripts/bundle.sh or task bundle.
+
+The macOS icon regression check can also run independently of XCTest:
+`bash scripts/test-input-source-icons.sh`. It verifies that U.S., Russian and
+British have different rendered badges at 1x and 2x, and that unavailable
+system icon APIs fall back to text. It does not change the selected input source.
 
 The menu offers **Restart macoc**, **Install to ~/Applications…** and
 **Launch at Login**, registered via Apple's SMAppService.mainApp. If macOS
