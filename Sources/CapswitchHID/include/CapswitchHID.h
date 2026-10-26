@@ -8,6 +8,12 @@
 int32_t CapswitchReadCapsLock(bool *enabled);
 int32_t CapswitchWriteCapsLock(bool enabled);
 
+// Sets only the physical Caps Lock LED on keyboards exposing an output LED
+// element. Does not change modifier state. Blocking; call off the event tap.
+// Returns an IOKit error if any supported device fails; updatedCount counts
+// successfully written elements, including when another keyboard fails.
+int32_t CapswitchWriteCapsLED(bool enabled, uint32_t *updatedCount);
+
 // Remaps HID usage 0x700000039 (physical Caps Lock) to 0x70000006E (F19).
 // Uses IOHIDEventSystemClient directly in the current process. Does not
 // launch hidutil or require root, a privileged helper or a virtual driver.

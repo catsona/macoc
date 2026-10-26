@@ -25,6 +25,7 @@ enum InputControllerError: LocalizedError {
 final class MacOSInputController {
     private let inputSources = InputSourceManager()
     private let remapper = HIDRemappingController()
+    private let capsLED = CapsLEDController()
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
@@ -89,7 +90,7 @@ final class MacOSInputController {
     }
 
     var diagnosticsSummary: String {
-        "F19 ↓\(observedF19Down) ↑\(observedF19Up) · switches \(successfulSwitches)"
+        "F19 ↓\(observedF19Down) ↑\(observedF19Up) · switches \(successfulSwitches) · LED: \(capsLED.status)"
     }
 
     func start() throws {
@@ -152,6 +153,7 @@ final class MacOSInputController {
             throw error
         }
 
+        refreshCapsLED()
         onStateChanged?()
     }
 
@@ -167,6 +169,8 @@ final class MacOSInputController {
             onStateChanged?()
             return false
         }
+
+        capsLED.restore()
 
         if let eventTap {
             CGEvent.tapEnable(tap: eventTap, enable: false)
@@ -209,6 +213,14 @@ final class MacOSInputController {
 
     func refreshInputSources() {
         inputSources.refresh()
+    }
+
+    func refreshCapsLED() {
+        guard !isPaused, isRunning,
+              let enabled = LayoutIndicator.capsLEDEnabled(
+                inputSourceID: inputSources.currentInputSourceID
+              ) else { return }
+        capsLED.update(enabled: enabled)
     }
 
     // macOS can silently disable taps after a timeout or permission change.
@@ -378,6 +390,7 @@ final class MacOSInputController {
             if inputSources.selectNextInputSource() {
                 successfulSwitches += 1
                 DispatchQueue.main.async { [weak self] in
+                    self?.refreshCapsLED()
                     self?.onStateChanged?()
                 }
             } else {
@@ -406,6 +419,7 @@ final class MacOSInputController {
         }
 
         DispatchQueue.main.async { [weak self] in
+            self?.refreshCapsLED()
             self?.onStateChanged?()
         }
     }

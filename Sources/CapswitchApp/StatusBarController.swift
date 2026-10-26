@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import Foundation
 import ServiceManagement
 
@@ -110,6 +111,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             object: nil
         )
 
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(inputSourceDidChange),
+            name: Notification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
+            object: nil
+        )
+
         inputController.requestRequiredPermissions()
         refreshController()
     }
@@ -117,6 +125,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     deinit {
         refreshTimer?.invalidate()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
+        DistributedNotificationCenter.default().removeObserver(self)
         inputController.stop()
         statusItem.menu = nil
         NSStatusBar.system.removeStatusItem(statusItem)
@@ -203,6 +212,8 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             }
         }
 
+        // Also repairs OS LED resets and initializes newly connected keyboards.
+        inputController.refreshCapsLED()
         update()
     }
 
@@ -284,6 +295,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func didWake(_ notification: Notification) {
         inputController.repairMappingIfNeeded()
         refreshController()
+    }
+
+    @objc private func inputSourceDidChange(_ notification: Notification) {
+        inputController.refreshCapsLED()
+        update()
     }
 
     @objc private func togglePaused() {
