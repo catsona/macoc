@@ -102,17 +102,23 @@ assigned its normal modifier role rather than No Action.
 
 ## Forgejo CI and releases
 
-The workflow at .forgejo/workflows/macos.yml builds and tests on pushes to
-main. A pushed tag such as v0.3.0 also creates a Forgejo release with a
-macOS .app ZIP and SHA-256 checksum, through the built-in scoped token.
+CI workflow: .forgejo/workflows/ci.yml. It uses the **existing Docker
+runner** and the official Linux Swift image. Pushes to main run shell
+validation and **actual XCTest for pure Swift core logic**. On version
+tags it also checks the tag against the application version.
 
-**A real Mac Forgejo runner labelled macos is required.** The Linux server
-cannot build AppKit or IOKit. See [CI setup](docs/ci.md). Until a Mac runner
-is registered and its job succeeds, no release build has been produced.
+**Linux Docker cannot compile macOS .app binaries** because Apple AppKit,
+IOKit and macOS SDK are unavailable there. Docker CI does not publish
+nonexistent macOS binaries.
 
-A release archive signed ad-hoc is intended for local evaluation.
-To distribute broadly without Gatekeeper warnings, use Developer ID
-signing and Apple's notarization service (not yet configured here).
+For a release archive, check out the tag on a real Mac and run
+bash scripts/package.sh (or task package), then execute
+bash scripts/publish-release.sh with a repository-scoped Forgejo token.
+See [CI and release instructions](docs/ci.md). Fully automated macOS
+binary releases require a real Mac runner or another Mac build service.
+
+Ad-hoc artifacts are suited to local evaluation; public distribution
+requires Developer ID signing and Apple notarization.
 
 ## Diagnostics and recovery
 

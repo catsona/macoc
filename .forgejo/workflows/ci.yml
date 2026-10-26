@@ -1,0 +1,73 @@
+name: macoc CI (Docker)
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  swift-core:
+    # This is the ONLY currently available runner label.
+    runs-on: docker
+    # The runner may have a Node/Alpine default image. Override it with
+    # official Swift on Linux so we can run the real platform-neutral XCTest.
+    container:
+      image: swift:6.2-noble
+    steps:
+      - name: Check out commit without Node.js actions
+        env:
+          MACOC_SERVER_URL: "${{ forgejo.server_url }}"
+          MACOC_REPOSITORY: "${{ forgejo.repository }}"
+          MACOC_SHA: "${{ forgejo.sha }}"
+          MACOC_TOKEN: "${{ forgejo.token }}"
+        run: |
+          set -eu
+          test "$MACOC_REPOSITORY" = "catsona/macoc"
+          case "$MACOC_SHA" in
+            ''|*[!0-9a-f]*) echo "Invalid Forgejo commit SHA" >&2; exit 1 ;;
+          esac
+
+          # Checkout actions depend on Node.js, which the official Swift
+          # image does not provide. Forgejo's own archive API returns an
+          # archive for the exact triggering commit (also for private repos).
+          workspace="${FORGEJO_WORKSPACE:-${GITHUB_WORKSPACE:-$PWD}}"
+          mkdir -p "$workspace"
+          archive="$(mktemp)"
+          config="$(mktemp)"
+          chmod 600 "$config"
+          trap 'rm -f "$archive" "$config"' EXIT
+          printf 'header = "Authorization: token %s"\n' "$MACOC_TOKEN" > "$config"
+          curl --config "$config" --fail --silent --show-error \
+            "$MACOC_SERVER_URL/api/v1/repos/$MACOC_REPOSITORY/archive/$MACOC_SHA.tar.gz" \
+            --output "$archive"
+          tar -xzf "$archive" --strip-components=1 -C "$workspace"
+          cd "$workspace"
+
+          # The API tarball has no .git directory. Create a temporary local
+          # index so git diff --cached --check still catches whitespace errors.
+          git init -q
+          git config --global --add safe.directory "$workspace"
+          git add -A
+
+      - name: Lint and run Linux SwiftCore XCTest
+        env:
+          MACOC_REQUIRE_SWIFT: '1'
+        run: |
+          swift --version
+          bash scripts/verify.sh
+
+      - name: Verify release tag matches Info.plist
+        if: startsWith(forgejo.ref, 'refs/tags/v')
+        env:
+          MACOC_TAG: "${{ forgejo.ref_name }}"
+        run: |
+          set -eu
+          version="$(sed -n '/<key>CFBundleShortVersionString<\/key>/{n;s/.*<string>\([^<]*\)<\/string>.*/\1/p;}' Resources/Info.plist)"
+          if [ -z "$version" ] || [ "$MACOC_TAG" != "v$version" ]; then
+            echo "Tag $MACOC_TAG does not match app version v$version" >&2
+            exit 1
+          fi
+          echo "Validated source tag $MACOC_TAG (no macOS binary built in Docker)."

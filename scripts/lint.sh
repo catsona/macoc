@@ -18,8 +18,8 @@ grep -q 'TISSelectInputSource' Sources/CapswitchApp/InputSourceManager.swift
 grep -q 'IOHIDServiceClientSetProperty' Sources/CapswitchHID/CapswitchRemapping.c
 grep -q '/usr/bin/open' Sources/CapswitchApp/ApplicationRelauncher.swift
 grep -q 'SMAppService.mainApp' Sources/CapswitchApp/LoginItemManager.swift
-test -f .forgejo/workflows/macos.yml
-for name in build bundle test install doctor clean lint verify icon sign package publish-release setup-signing; do
+test -f .forgejo/workflows/ci.yml
+for name in build bundle test test-linux-core install doctor clean lint verify icon sign package publish-release setup-signing; do
   bash -n "scripts/$name.sh"
 done
 echo "lint: PASS"
