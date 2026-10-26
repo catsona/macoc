@@ -1,12 +1,16 @@
 # macoc
 
+<p align="center">
+  <img src="Resources/AppIcon-preview.png" alt="macoc icon - a furious programmer on a burning office chair" width="172">
+</p>
+
 Native macOS menu-bar layout switcher for macOS Sonoma (14+) without
 the stock Caps Lock delay. Plain **Caps** switches to the next configured
 input source on **release**, including during fast typing. **Option+Caps**
 in either order toggles the real system Caps Lock state.
 
-The icon is a SFW cartoon of someone thoroughly fed up with keyboard
-layout switching, complete with a literally hot seat.
+macoc keeps input switching simple. The icon is an SFW illustration
+of exactly how frustrating the old Caps Lock behavior can feel.
 
 ## Architecture
 
@@ -15,6 +19,38 @@ by a CoreGraphics event tap. Layouts switch through Carbon TIS. No drivers,
 root daemons, third-party input libraries or hidutil permission required.
 
 Apple technical note: https://developer.apple.com/library/archive/technotes/tn2450/
+
+## App icon
+
+The icon uses a 1024 x 1024 RGBA master with a centered 824 x 824
+superellipse body and transparent margins. This matches the visual
+balance of the macOS application icon grid without accidentally
+shipping a square, white-backed image.
+
+- [Full-resolution master](Resources/AppIcon.png) - the single source for
+  the shipped classic Sonoma AppIcon.icns.
+- [Editable source layout](Resources/AppIconArtwork.svg) - includes the
+  artwork and the clipping geometry, without requiring a third-party
+  image tool during app builds.
+- [Non-shipping design grid](Resources/AppIconGrid.svg) - alignment lines,
+  guides and 100px margins; never embedded in the icon.
+- [Layout measurements](Resources/AppIconLayout.json) - canvas, silhouette,
+  crop and inset values.
+- [Illustration source](Resources/IconArtwork.jpg) - editable raster scene.
+
+When running bash scripts/icon.sh (or task icon) on macOS, the build
+uses sips to generate all ten Apple iconset PNG representations:
+16, 32, 128, 256 and 512 points, each at 1x and 2x. iconutil
+combines them into Contents/Resources/AppIcon.icns. The shipped master
+already has transparency, a subtle edge shadow, and safe spacing.
+
+This is a classic precomposed macOS 14 .icns, not the layered Icon
+Composer format introduced for newer icon appearances.
+
+Apple design references:
+- [Apple Human Interface Guidelines - app icons](https://developer.apple.com/design/human-interface-guidelines/app-icons)
+- [Apple Design Resources - grids and templates](https://developer.apple.com/design/resources/)
+- [Apple archive - iconset filenames and scales](https://developer.apple.com/library/archive/documentation/Xcode/Reference/xcode_ref-Asset_Catalog_Format/IconSetType.html)
 
 ## Build and install
 
@@ -114,8 +150,7 @@ nonexistent macOS binaries.
 For a release archive, check out the tag on a real Mac and run
 bash scripts/package.sh (or task package), then execute
 bash scripts/publish-release.sh with a repository-scoped Forgejo token.
-See [CI and release instructions](docs/ci.md). Fully automated macOS
-binary releases require a real Mac runner or another Mac build service.
+Fully automated macOS binary releases require a real Mac runner or another Mac build service.
 
 Ad-hoc artifacts are suited to local evaluation; public distribution
 requires Developer ID signing and Apple notarization.

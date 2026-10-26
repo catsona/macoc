@@ -5,7 +5,10 @@ git diff --check
 git diff --cached --check
 test -f Package.swift
 test -f Resources/Info.plist
-test -s Resources/IconSource.jpg
+test -s Resources/AppIcon.png
+test -s Resources/AppIcon-preview.png
+test -s Resources/IconArtwork.jpg
+python3 scripts/tests/test_icon_assets.py
 test -f Sources/CapswitchApp/MacOSInputController.swift
 test -f Sources/CapswitchApp/InputSourceManager.swift
 test -f Sources/CapswitchApp/ApplicationRelauncher.swift

@@ -1,0 +1,17 @@
+{
+  "canvasPixels": 1024,
+  "bodyPixels": 824,
+  "bodyOrigin": [
+    100,
+    100
+  ],
+  "superellipseExponent": 4.4,
+  "sourceCrop": [
+    0,
+    0,
+    1,
+    1
+  ],
+  "sourceFile": "IconArtwork.jpg",
+  "legacyFormat": "icns"
+}
