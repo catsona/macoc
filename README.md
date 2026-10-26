@@ -9,6 +9,10 @@ the stock Caps Lock delay. Plain **Caps** switches to the next configured
 input source on **release**, including during fast typing. **Option+Caps**
 in either order toggles the real system Caps Lock state.
 
+The menu bar shows the current input source's system icon, with its name in
+the tooltip. If no icon is available, it shows a short name instead.
+When switching is inactive, the indicator reads **Caps!**.
+
 macoc keeps input switching simple. The icon is an SFW illustration
 of exactly how frustrating the old Caps Lock behavior can feel.
 
