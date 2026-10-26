@@ -46,7 +46,9 @@ final class InputSourceManager {
         if icon?.isValid != true,
            let pointer = TISGetInputSourceProperty(source, kTISPropertyIconRef) {
             // Keyboard layouts may expose only the legacy IconRef representation.
-            icon = NSImage(iconRef: OpaquePointer(pointer))
+            icon = withExtendedLifetime(source) {
+                image(from: OpaquePointer(pointer))
+            }
         }
         guard let icon, icon.isValid else {
             return nil
@@ -57,6 +59,45 @@ final class InputSourceManager {
         icon.isTemplate = false
         sourceIcons[id] = icon
         return icon
+    }
+
+    private func image(from iconRef: IconRef) -> NSImage? {
+        let size = NSSize(width: 16, height: 16)
+        let image = NSImage(size: size)
+
+        // Render eagerly while the input source still owns the borrowed IconRef.
+        // Separate representations preserve sharp icons on standard and Retina displays.
+        for scale in [1, 2] {
+            guard let context = CGContext(
+                data: nil,
+                width: 16 * scale,
+                height: 16 * scale,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else {
+                return nil
+            }
+            context.scaleBy(x: CGFloat(scale), y: CGFloat(scale))
+            var rect = CGRect(origin: .zero, size: size)
+            guard PlotIconRefInContext(
+                context,
+                &rect,
+                IconAlignmentType(kAlignNone),
+                IconTransformType(kTransformNone),
+                nil,
+                PlotIconRefFlags(kPlotIconRefNormalFlags),
+                iconRef
+            ) == noErr,
+                let cgImage = context.makeImage() else {
+                return nil
+            }
+            let representation = NSBitmapImageRep(cgImage: cgImage)
+            representation.size = size
+            image.addRepresentation(representation)
+        }
+        return image
     }
 
     func refresh() {
